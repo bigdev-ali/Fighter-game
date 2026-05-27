@@ -12,19 +12,52 @@ int main(int argc, char *argv[])
     SDL_Window *window = SDL_CreateWindow("Fighter Game", 800, 600, 0);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, NULL);
 
+    // Player positions
     float p1x = 100, p1y = 400;
     float p2x = 650, p2y = 400;
+
+    // Velocities
+    float p1vy = 0, p2vy = 0;
+
+    // Jump states
+    bool p1jumping = false, p2jumping = false;
+
+    // Physics
+    float gravity = 1500.0f;
+    float jumpForce = -600.0f;
+    float groundY = 400.0f;
+
+    Uint64 lastTime = SDL_GetTicks();
 
     bool running = true;
     SDL_Event event;
 
     while (running)
     {
+        Uint64 currentTime = SDL_GetTicks();
+        float deltaTime = (currentTime - lastTime) / 1000.0f;
+        lastTime = currentTime;
+
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_EVENT_QUIT)
             {
                 running = false;
+            }
+
+            // Jump on key press (not hold)
+            if (event.type == SDL_EVENT_KEY_DOWN)
+            {
+                if (event.key.scancode == SDL_SCANCODE_W && !p1jumping)
+                {
+                    p1vy = jumpForce;
+                    p1jumping = true;
+                }
+                if (event.key.scancode == SDL_SCANCODE_UP && !p2jumping)
+                {
+                    p2vy = jumpForce;
+                    p2jumping = true;
+                }
             }
         }
 
@@ -32,16 +65,36 @@ int main(int argc, char *argv[])
         const bool *keys = SDL_GetKeyboardState(NULL);
 
         // Player 1 movement (WASD)
-        if (keys[SDL_SCANCODE_A])
-            p1x -= 5;
-        if (keys[SDL_SCANCODE_D])
-            p1x += 5;
+        if (keys[SDL_SCANCODE_A]) p1x -= 300 * deltaTime;
+        if (keys[SDL_SCANCODE_D]) p1x += 300 * deltaTime;
 
         // Player 2 movement (Arrow keys)
-        if (keys[SDL_SCANCODE_LEFT])
-            p2x -= 5;
-        if (keys[SDL_SCANCODE_RIGHT])
-            p2x += 5;
+        if (keys[SDL_SCANCODE_LEFT]) p2x -= 300 * deltaTime;
+        if (keys[SDL_SCANCODE_RIGHT]) p2x += 300 * deltaTime;
+
+        // Apply gravity to player 1
+        p1vy += gravity * deltaTime;
+        p1y += p1vy * deltaTime;
+
+        // Player 1 land on ground
+        if (p1y >= groundY)
+        {
+            p1y = groundY;
+            p1vy = 0;
+            p1jumping = false;
+        }
+
+        // Apply gravity to player 2
+        p2vy += gravity * deltaTime;
+        p2y += p2vy * deltaTime;
+
+        // Player 2 land on ground
+        if (p2y >= groundY)
+        {
+            p2y = groundY;
+            p2vy = 0;
+            p2jumping = false;
+        }
 
         // Clear screen
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
