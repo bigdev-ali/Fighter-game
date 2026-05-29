@@ -95,6 +95,18 @@ int main(int argc, char *argv[])
         if (keys[SDL_SCANCODE_RIGHT])
             p2x += 300 * deltaTime;
 
+        // Player 1 boundaries
+        if (p1x < 0)
+            p1x = 0;
+        if (p1x > 750)
+            p1x = 750;
+
+        // Player 2 boundaries
+        if (p2x < 0)
+            p2x = 0;
+        if (p2x > 750)
+            p2x = 750;
+
         // Apply gravity player 1
         p1vy += gravity * deltaTime;
         p1y += p1vy * deltaTime;
@@ -152,6 +164,11 @@ int main(int argc, char *argv[])
         // Clear screen
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
+
+        // Draw ground
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_FRect ground = {0, 500, 800, 10};
+        SDL_RenderFillRect(renderer, &ground);
 
         // Draw health bar backgrounds (grey)
         SDL_FRect p1healthBG = {50, 30, 200, 20};
