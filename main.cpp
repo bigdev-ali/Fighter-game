@@ -1,4 +1,5 @@
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 
 int main(int argc, char *argv[])
@@ -6,6 +7,19 @@ int main(int argc, char *argv[])
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
         std::cout << "SDL failed to init: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+
+    if (!TTF_Init())
+    {
+        std::cout << "TTF failed to init: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+
+    TTF_Font *font = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 64);
+    if (!font)
+    {
+        std::cout << "Font failed to load: " << SDL_GetError() << std::endl;
         return 1;
     }
 
@@ -34,6 +48,10 @@ int main(int argc, char *argv[])
     float jumpForce = -600.0f;
     float groundY = 400.0f;
 
+    // Game state
+    bool gameOver = false;
+    std::string winner = "";
+
     Uint64 lastTime = SDL_GetTicks();
 
     bool running = true;
@@ -48,13 +66,10 @@ int main(int argc, char *argv[])
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_EVENT_QUIT)
-            {
                 running = false;
-            }
 
-            if (event.type == SDL_EVENT_KEY_DOWN)
+            if (!gameOver && event.type == SDL_EVENT_KEY_DOWN)
             {
-                // Jump
                 if (event.key.scancode == SDL_SCANCODE_W && !p1jumping)
                 {
                     p1vy = jumpForce;
@@ -65,8 +80,6 @@ int main(int argc, char *argv[])
                     p2vy = jumpForce;
                     p2jumping = true;
                 }
-
-                // Attack
                 if (event.key.scancode == SDL_SCANCODE_F && !p1attacking)
                 {
                     p1attacking = true;
@@ -80,85 +93,94 @@ int main(int argc, char *argv[])
             }
         }
 
-        // Get keyboard state
-        const bool *keys = SDL_GetKeyboardState(NULL);
-
-        // Player 1 movement (WASD)
-        if (keys[SDL_SCANCODE_A])
-            p1x -= 300 * deltaTime;
-        if (keys[SDL_SCANCODE_D])
-            p1x += 300 * deltaTime;
-
-        // Player 2 movement (Arrow keys)
-        if (keys[SDL_SCANCODE_LEFT])
-            p2x -= 300 * deltaTime;
-        if (keys[SDL_SCANCODE_RIGHT])
-            p2x += 300 * deltaTime;
-
-        // Player 1 boundaries
-        if (p1x < 0)
-            p1x = 0;
-        if (p1x > 750)
-            p1x = 750;
-
-        // Player 2 boundaries
-        if (p2x < 0)
-            p2x = 0;
-        if (p2x > 750)
-            p2x = 750;
-
-        // Apply gravity player 1
-        p1vy += gravity * deltaTime;
-        p1y += p1vy * deltaTime;
-        if (p1y >= groundY)
+        if (!gameOver)
         {
-            p1y = groundY;
-            p1vy = 0;
-            p1jumping = false;
-        }
+            const bool *keys = SDL_GetKeyboardState(NULL);
 
-        // Apply gravity player 2
-        p2vy += gravity * deltaTime;
-        p2y += p2vy * deltaTime;
-        if (p2y >= groundY)
-        {
-            p2y = groundY;
-            p2vy = 0;
-            p2jumping = false;
-        }
+            if (keys[SDL_SCANCODE_A])
+                p1x -= 300 * deltaTime;
+            if (keys[SDL_SCANCODE_D])
+                p1x += 300 * deltaTime;
+            if (keys[SDL_SCANCODE_LEFT])
+                p2x -= 300 * deltaTime;
+            if (keys[SDL_SCANCODE_RIGHT])
+                p2x += 300 * deltaTime;
 
-        // Attack timers
-        if (p1attacking)
-        {
-            p1attackTimer--;
-            if (p1attackTimer <= 0)
-                p1attacking = false;
-        }
-        if (p2attacking)
-        {
-            p2attackTimer--;
-            if (p2attackTimer <= 0)
-                p2attacking = false;
-        }
+            // Boundaries
+            if (p1x < 0)
+                p1x = 0;
+            if (p1x > 750)
+                p1x = 750;
+            if (p2x < 0)
+                p2x = 0;
+            if (p2x > 750)
+                p2x = 750;
 
-        // Hitboxes
-        SDL_FRect p1hitbox = {p1x + 50, p1y + 20, 60, 30};
-        SDL_FRect p2hitbox = {p2x - 60, p2y + 20, 60, 30};
-        SDL_FRect p1rect = {p1x, p1y, 50, 100};
-        SDL_FRect p2rect = {p2x, p2y, 50, 100};
+            // Gravity player 1
+            p1vy += gravity * deltaTime;
+            p1y += p1vy * deltaTime;
+            if (p1y >= groundY)
+            {
+                p1y = groundY;
+                p1vy = 0;
+                p1jumping = false;
+            }
 
-        // Collision detection
-        if (p1attacking && SDL_HasRectIntersectionFloat(&p1hitbox, &p2rect))
-        {
-            p2health -= 0.5f;
-            if (p2health < 0)
-                p2health = 0;
-        }
-        if (p2attacking && SDL_HasRectIntersectionFloat(&p2hitbox, &p1rect))
-        {
-            p1health -= 0.5f;
-            if (p1health < 0)
-                p1health = 0;
+            // Gravity player 2
+            p2vy += gravity * deltaTime;
+            p2y += p2vy * deltaTime;
+            if (p2y >= groundY)
+            {
+                p2y = groundY;
+                p2vy = 0;
+                p2jumping = false;
+            }
+
+            // Attack timers
+            if (p1attacking)
+            {
+                p1attackTimer--;
+                if (p1attackTimer <= 0)
+                    p1attacking = false;
+            }
+            if (p2attacking)
+            {
+                p2attackTimer--;
+                if (p2attackTimer <= 0)
+                    p2attacking = false;
+            }
+
+            // Hitboxes
+            SDL_FRect p1hitbox = {p1x + 50, p1y + 20, 60, 30};
+            SDL_FRect p2hitbox = {p2x - 60, p2y + 20, 60, 30};
+            SDL_FRect p1rect = {p1x, p1y, 50, 100};
+            SDL_FRect p2rect = {p2x, p2y, 50, 100};
+
+            // Collision
+            if (p1attacking && SDL_HasRectIntersectionFloat(&p1hitbox, &p2rect))
+            {
+                p2health -= 0.5f;
+                if (p2health < 0)
+                    p2health = 0;
+            }
+            if (p2attacking && SDL_HasRectIntersectionFloat(&p2hitbox, &p1rect))
+            {
+                p1health -= 0.5f;
+                if (p1health < 0)
+                    p1health = 0;
+            }
+
+            // Check game over
+            if (p1health <= 0)
+            {
+                gameOver = true;
+                winner = "Player 2 Wins!";
+            }
+            if (p2health <= 0)
+            {
+                gameOver = true;
+                winner = "Player 1 Wins!";
+            }
         }
 
         // Clear screen
@@ -170,43 +192,63 @@ int main(int argc, char *argv[])
         SDL_FRect ground = {0, 500, 800, 10};
         SDL_RenderFillRect(renderer, &ground);
 
-        // Draw health bar backgrounds (grey)
+        // Health bar backgrounds
         SDL_FRect p1healthBG = {50, 30, 200, 20};
         SDL_FRect p2healthBG = {550, 30, 200, 20};
         SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
         SDL_RenderFillRect(renderer, &p1healthBG);
         SDL_RenderFillRect(renderer, &p2healthBG);
 
-        // Draw health bars (green)
+        // Health bars
         SDL_FRect p1healthBar = {50, 30, (p1health / 100.0f) * 200, 20};
         SDL_FRect p2healthBar = {550, 30, (p2health / 100.0f) * 200, 20};
         SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
         SDL_RenderFillRect(renderer, &p1healthBar);
         SDL_RenderFillRect(renderer, &p2healthBar);
 
-        // Draw player 1 (red)
+        // Draw players
+        SDL_FRect p1rect = {p1x, p1y, 50, 100};
+        SDL_FRect p2rect = {p2x, p2y, 50, 100};
         SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
         SDL_RenderFillRect(renderer, &p1rect);
-
-        // Draw player 2 (blue)
         SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
         SDL_RenderFillRect(renderer, &p2rect);
 
-        // Draw attack hitboxes (yellow) when attacking
+        // Draw hitboxes
         if (p1attacking)
         {
+            SDL_FRect p1hitbox = {p1x + 50, p1y + 20, 60, 30};
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &p1hitbox);
         }
         if (p2attacking)
         {
+            SDL_FRect p2hitbox = {p2x - 60, p2y + 20, 60, 30};
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &p2hitbox);
+        }
+
+        // Game over screen
+        if (gameOver)
+        {
+            SDL_Color white = {255, 255, 255, 255};
+            SDL_Surface *surface = TTF_RenderText_Blended(font, winner.c_str(), 0, white);
+            SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+
+            float textW = surface->w;
+            float textH = surface->h;
+            SDL_FRect textRect = {(800 - textW) / 2, (600 - textH) / 2, textW, textH};
+
+            SDL_RenderTexture(renderer, texture, NULL, &textRect);
+            SDL_DestroySurface(surface);
+            SDL_DestroyTexture(texture);
         }
 
         SDL_RenderPresent(renderer);
     }
 
+    TTF_CloseFont(font);
+    TTF_Quit();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
