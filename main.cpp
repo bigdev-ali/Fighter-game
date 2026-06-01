@@ -3,6 +3,15 @@
 #include <SDL3_image/SDL_image.h>
 #include <iostream>
 
+enum GameState
+{
+    SHOW_ROUND,
+    SHOW_FIGHT,
+    PLAYING,
+    ROUND_OVER,
+    GAME_OVER
+};
+
 int main(int argc, char *argv[])
 {
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -17,8 +26,11 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    TTF_Font *font = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 48);
-    if (!font)
+    TTF_Font *fontBig = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 80);
+    TTF_Font *fontSmall = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 28);
+    TTF_Font *fontMed = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 48);
+
+    if (!fontBig || !fontSmall || !fontMed)
     {
         std::cout << "Font failed to load: " << SDL_GetError() << std::endl;
         return 1;
@@ -46,8 +58,11 @@ int main(int argc, char *argv[])
     float gravity = 1500.0f;
     float jumpForce = -600.0f;
     float groundY = 400.0f;
-    bool gameOver = false;
+    int currentRound = 1;
+    int p1wins = 0, p2wins = 0;
     std::string winner = "";
+    GameState state = SHOW_ROUND;
+    float stateTimer = 1.5f;
 
     Uint64 lastTime = SDL_GetTicks();
     bool running = true;
@@ -66,7 +81,7 @@ int main(int argc, char *argv[])
 
             if (event.type == SDL_EVENT_KEY_DOWN)
             {
-                if (gameOver && event.key.scancode == SDL_SCANCODE_SPACE)
+                if (state == GAME_OVER && event.key.scancode == SDL_SCANCODE_SPACE)
                 {
                     p1x = 100;
                     p1y = 400;
@@ -82,11 +97,15 @@ int main(int argc, char *argv[])
                     p2attacking = false;
                     p1attackTimer = 0;
                     p2attackTimer = 0;
-                    gameOver = false;
+                    currentRound = 1;
+                    p1wins = 0;
+                    p2wins = 0;
                     winner = "";
+                    state = SHOW_ROUND;
+                    stateTimer = 1.5f;
                 }
 
-                if (!gameOver)
+                if (state == PLAYING)
                 {
                     if (event.key.scancode == SDL_SCANCODE_W && !p1jumping)
                     {
@@ -112,7 +131,22 @@ int main(int argc, char *argv[])
             }
         }
 
-        if (!gameOver)
+        if (state == SHOW_ROUND)
+        {
+            stateTimer -= deltaTime;
+            if (stateTimer <= 0)
+            {
+                state = SHOW_FIGHT;
+                stateTimer = 1.0f;
+            }
+        }
+        else if (state == SHOW_FIGHT)
+        {
+            stateTimer -= deltaTime;
+            if (stateTimer <= 0)
+                state = PLAYING;
+        }
+        else if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
 
@@ -183,18 +217,56 @@ int main(int argc, char *argv[])
                     p1health = 0;
             }
 
-            if (p1health <= 0)
+            if (p1health <= 0 || p2health <= 0)
             {
-                gameOver = true;
-                winner = "Player 2 Wins!";
+                if (p1health <= 0)
+                    p2wins++;
+                if (p2health <= 0)
+                    p1wins++;
+
+                if (p1wins == 2)
+                {
+                    winner = "Player 1 Wins!";
+                    state = GAME_OVER;
+                }
+                else if (p2wins == 2)
+                {
+                    winner = "Player 2 Wins!";
+                    state = GAME_OVER;
+                }
+                else
+                {
+                    currentRound++;
+                    state = ROUND_OVER;
+                    stateTimer = 2.0f;
+                }
             }
-            if (p2health <= 0)
+        }
+        else if (state == ROUND_OVER)
+        {
+            stateTimer -= deltaTime;
+            if (stateTimer <= 0)
             {
-                gameOver = true;
-                winner = "Player 1 Wins!";
+                p1x = 100;
+                p1y = 400;
+                p2x = 650;
+                p2y = 400;
+                p1vy = 0;
+                p2vy = 0;
+                p1jumping = false;
+                p2jumping = false;
+                p1health = 100;
+                p2health = 100;
+                p1attacking = false;
+                p2attacking = false;
+                p1attackTimer = 0;
+                p2attackTimer = 0;
+                state = SHOW_ROUND;
+                stateTimer = 1.5f;
             }
         }
 
+        // DRAW
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
@@ -202,23 +274,59 @@ int main(int argc, char *argv[])
         SDL_FRect ground = {0, 500, 800, 10};
         SDL_RenderFillRect(renderer, &ground);
 
-        SDL_FRect p1healthBG = {50, 30, 200, 20};
-        SDL_FRect p2healthBG = {550, 30, 200, 20};
+        // Health bar backgrounds
+        SDL_FRect p1healthBG = {50, 50, 200, 20};
+        SDL_FRect p2healthBG = {550, 50, 200, 20};
         SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
         SDL_RenderFillRect(renderer, &p1healthBG);
         SDL_RenderFillRect(renderer, &p2healthBG);
 
-        SDL_FRect p1healthBar = {50, 30, (p1health / 100.0f) * 200, 20};
-        SDL_FRect p2healthBar = {550, 30, (p2health / 100.0f) * 200, 20};
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+        // Health bars
+        SDL_FRect p1healthBar = {50, 50, (p1health / 100.0f) * 200, 20};
+        SDL_FRect p2healthBar = {550, 50, (p2health / 100.0f) * 200, 20};
+        SDL_SetRenderDrawColor(renderer, p1health < 30 ? 255 : 0, p1health >= 30 ? 255 : 0, 0, 255);
         SDL_RenderFillRect(renderer, &p1healthBar);
+        SDL_SetRenderDrawColor(renderer, p2health < 30 ? 255 : 0, p2health >= 30 ? 255 : 0, 0, 255);
         SDL_RenderFillRect(renderer, &p2healthBar);
 
+        // Player names
+        SDL_Color white = {255, 255, 255, 255};
+
+        SDL_Surface *name1surf = TTF_RenderText_Blended(fontSmall, "Player 1", 0, white);
+        SDL_Texture *name1tex = SDL_CreateTextureFromSurface(renderer, name1surf);
+        SDL_FRect name1rect = {50, 5, (float)name1surf->w, (float)name1surf->h};
+        SDL_RenderTexture(renderer, name1tex, NULL, &name1rect);
+        SDL_DestroySurface(name1surf);
+        SDL_DestroyTexture(name1tex);
+
+        SDL_Surface *name2surf = TTF_RenderText_Blended(fontSmall, "Player 2", 0, white);
+        SDL_Texture *name2tex = SDL_CreateTextureFromSurface(renderer, name2surf);
+        SDL_FRect name2rect = {550, 5, (float)name2surf->w, (float)name2surf->h};
+        SDL_RenderTexture(renderer, name2tex, NULL, &name2rect);
+        SDL_DestroySurface(name2surf);
+        SDL_DestroyTexture(name2tex);
+
+        // Round wins dots
+        for (int i = 0; i < p1wins; i++)
+        {
+            SDL_FRect dot = {50.0f + i * 20, 75, 15, 15};
+            SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+            SDL_RenderFillRect(renderer, &dot);
+        }
+        for (int i = 0; i < p2wins; i++)
+        {
+            SDL_FRect dot = {550.0f + i * 20, 75, 15, 15};
+            SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+            SDL_RenderFillRect(renderer, &dot);
+        }
+
+        // Sprites
         SDL_FRect p1rect = {p1x, p1y, 80, 100};
         SDL_FRect p2rect = {p2x, p2y, 80, 100};
         SDL_RenderTexture(renderer, p1sprite, NULL, &p1rect);
         SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
 
+        // Hitboxes
         if (p1attacking)
         {
             SDL_FRect p1hitbox = {p1x + 80, p1y + 20, 60, 30};
@@ -232,29 +340,52 @@ int main(int argc, char *argv[])
             SDL_RenderFillRect(renderer, &p2hitbox);
         }
 
-        if (gameOver)
+        // State text overlays
+        if (state == SHOW_ROUND)
         {
-            SDL_Color white = {255, 255, 255, 255};
+            std::string roundText = "Round " + std::to_string(currentRound);
+            SDL_Surface *rsurf = TTF_RenderText_Blended(fontBig, roundText.c_str(), 0, white);
+            SDL_Texture *rtex = SDL_CreateTextureFromSurface(renderer, rsurf);
+            SDL_FRect rrect = {(800 - (float)rsurf->w) / 2, (600 - (float)rsurf->h) / 2, (float)rsurf->w, (float)rsurf->h};
+            SDL_RenderTexture(renderer, rtex, NULL, &rrect);
+            SDL_DestroySurface(rsurf);
+            SDL_DestroyTexture(rtex);
+        }
+        else if (state == SHOW_FIGHT)
+        {
+            SDL_Color yellow = {255, 215, 0, 255};
+            SDL_Surface *fsurf = TTF_RenderText_Blended(fontBig, "FIGHT!", 0, yellow);
+            SDL_Texture *ftex = SDL_CreateTextureFromSurface(renderer, fsurf);
+            SDL_FRect frect = {(800 - (float)fsurf->w) / 2, (600 - (float)fsurf->h) / 2, (float)fsurf->w, (float)fsurf->h};
+            SDL_RenderTexture(renderer, ftex, NULL, &frect);
+            SDL_DestroySurface(fsurf);
+            SDL_DestroyTexture(ftex);
+        }
+        else if (state == ROUND_OVER)
+        {
+            std::string koText = p1health <= 0 ? "Player 2 wins round!" : "Player 1 wins round!";
+            SDL_Surface *kosurf = TTF_RenderText_Blended(fontMed, koText.c_str(), 0, white);
+            SDL_Texture *kotex = SDL_CreateTextureFromSurface(renderer, kosurf);
+            SDL_FRect korect = {(800 - (float)kosurf->w) / 2, (600 - (float)kosurf->h) / 2, (float)kosurf->w, (float)kosurf->h};
+            SDL_RenderTexture(renderer, kotex, NULL, &korect);
+            SDL_DestroySurface(kosurf);
+            SDL_DestroyTexture(kotex);
+        }
+        else if (state == GAME_OVER)
+        {
+            SDL_Surface *gsurf = TTF_RenderText_Blended(fontBig, winner.c_str(), 0, white);
+            SDL_Texture *gtex = SDL_CreateTextureFromSurface(renderer, gsurf);
+            SDL_FRect grect = {(800 - (float)gsurf->w) / 2, (600 - (float)gsurf->h) / 2 - 60, (float)gsurf->w, (float)gsurf->h};
+            SDL_RenderTexture(renderer, gtex, NULL, &grect);
+            SDL_DestroySurface(gsurf);
+            SDL_DestroyTexture(gtex);
 
-            // Line 1 - Winner
-            SDL_Surface *surface1 = TTF_RenderText_Blended(font, winner.c_str(), 0, white);
-            SDL_Texture *texture1 = SDL_CreateTextureFromSurface(renderer, surface1);
-            float text1W = surface1->w;
-            float text1H = surface1->h;
-            SDL_FRect textRect1 = {(800 - text1W) / 2, (600 - text1H) / 2 - 50, text1W, text1H};
-            SDL_RenderTexture(renderer, texture1, NULL, &textRect1);
-            SDL_DestroySurface(surface1);
-            SDL_DestroyTexture(texture1);
-
-            // Line 2 - Restart
-            SDL_Surface *surface2 = TTF_RenderText_Blended(font, "Press SPACE to restart", 0, white);
-            SDL_Texture *texture2 = SDL_CreateTextureFromSurface(renderer, surface2);
-            float text2W = surface2->w;
-            float text2H = surface2->h;
-            SDL_FRect textRect2 = {(800 - text2W) / 2, (600 - text2H) / 2 + 50, text2W, text2H};
-            SDL_RenderTexture(renderer, texture2, NULL, &textRect2);
-            SDL_DestroySurface(surface2);
-            SDL_DestroyTexture(texture2);
+            SDL_Surface *rsurf = TTF_RenderText_Blended(fontMed, "Press SPACE to restart", 0, white);
+            SDL_Texture *rtex = SDL_CreateTextureFromSurface(renderer, rsurf);
+            SDL_FRect rrect = {(800 - (float)rsurf->w) / 2, (600 - (float)rsurf->h) / 2 + 60, (float)rsurf->w, (float)rsurf->h};
+            SDL_RenderTexture(renderer, rtex, NULL, &rrect);
+            SDL_DestroySurface(rsurf);
+            SDL_DestroyTexture(rtex);
         }
 
         SDL_RenderPresent(renderer);
@@ -262,7 +393,9 @@ int main(int argc, char *argv[])
 
     SDL_DestroyTexture(p1sprite);
     SDL_DestroyTexture(p2sprite);
-    TTF_CloseFont(font);
+    TTF_CloseFont(fontBig);
+    TTF_CloseFont(fontSmall);
+    TTF_CloseFont(fontMed);
     TTF_Quit();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
