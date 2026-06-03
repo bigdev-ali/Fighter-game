@@ -62,6 +62,10 @@ int main(int argc, char *argv[])
     float p1health = 100, p2health = 100;
     bool p1attacking = false, p2attacking = false;
     int p1attackTimer = 0, p2attackTimer = 0;
+
+    // Hit flicker timers
+    int p1flicker = 0, p2flicker = 0;
+
     float gravity = 1500.0f;
     float jumpForce = -600.0f;
     float groundY = 400.0f;
@@ -104,6 +108,8 @@ int main(int argc, char *argv[])
                     p2attacking = false;
                     p1attackTimer = 0;
                     p2attackTimer = 0;
+                    p1flicker = 0;
+                    p2flicker = 0;
                     currentRound = 1;
                     p1wins = 0;
                     p2wins = 0;
@@ -206,6 +212,12 @@ int main(int argc, char *argv[])
                     p2attacking = false;
             }
 
+            // Flicker countdown
+            if (p1flicker > 0)
+                p1flicker--;
+            if (p2flicker > 0)
+                p2flicker--;
+
             SDL_FRect p1hitbox = {p1x + 50, p1y + 20, 60, 30};
             SDL_FRect p2hitbox = {p2x - 60, p2y + 20, 60, 30};
             SDL_FRect p1rect = {p1x, p1y, 80, 100};
@@ -216,12 +228,14 @@ int main(int argc, char *argv[])
                 p2health -= 0.5f;
                 if (p2health < 0)
                     p2health = 0;
+                p2flicker = 10;
             }
             if (p2attacking && SDL_HasRectIntersectionFloat(&p2hitbox, &p1rect))
             {
                 p1health -= 0.5f;
                 if (p1health < 0)
                     p1health = 0;
+                p1flicker = 10;
             }
 
             if (p1health <= 0 || p2health <= 0)
@@ -268,6 +282,8 @@ int main(int argc, char *argv[])
                 p2attacking = false;
                 p1attackTimer = 0;
                 p2attackTimer = 0;
+                p1flicker = 0;
+                p2flicker = 0;
                 state = SHOW_ROUND;
                 stateTimer = 1.5f;
             }
@@ -332,25 +348,21 @@ int main(int argc, char *argv[])
             SDL_RenderFillRect(renderer, &dot);
         }
 
-        // Sprites
+        // Draw sprites with flicker effect
         SDL_FRect p1rect = {p1x, p1y, 80, 100};
         SDL_FRect p2rect = {p2x, p2y, 80, 100};
-        SDL_RenderTexture(renderer, p1sprite, NULL, &p1rect);
-        SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
 
-        // Hitboxes
-        if (p1attacking)
-        {
-            SDL_FRect p1hitbox = {p1x + 80, p1y + 20, 60, 30};
-            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-            SDL_RenderFillRect(renderer, &p1hitbox);
-        }
-        if (p2attacking)
-        {
-            SDL_FRect p2hitbox = {p2x - 60, p2y + 20, 60, 30};
-            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-            SDL_RenderFillRect(renderer, &p2hitbox);
-        }
+        if (p1flicker > 0 && p1flicker % 2 == 0)
+            SDL_SetTextureColorMod(p1sprite, 255, 50, 50);
+        else
+            SDL_SetTextureColorMod(p1sprite, 255, 255, 255);
+        SDL_RenderTexture(renderer, p1sprite, NULL, &p1rect);
+
+        if (p2flicker > 0 && p2flicker % 2 == 0)
+            SDL_SetTextureColorMod(p2sprite, 255, 50, 50);
+        else
+            SDL_SetTextureColorMod(p2sprite, 255, 255, 255);
+        SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
 
         // State overlays
         if (state == SHOW_ROUND)
