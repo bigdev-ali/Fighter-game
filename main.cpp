@@ -39,6 +39,13 @@ int main(int argc, char *argv[])
     SDL_Window *window = SDL_CreateWindow("Fighter Game", 800, 600, 0);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, NULL);
 
+    SDL_Texture *background = IMG_LoadTexture(renderer, "C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\background.png");
+    if (!background)
+    {
+        std::cout << "Background failed to load: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+
     SDL_Texture *p1sprite = IMG_LoadTexture(renderer, "C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\player1.png");
     SDL_Texture *p2sprite = IMG_LoadTexture(renderer, "C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\player2.png");
 
@@ -270,6 +277,11 @@ int main(int argc, char *argv[])
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
+        // Background
+        SDL_FRect bgRect = {0, 0, 800, 600};
+        SDL_RenderTexture(renderer, background, NULL, &bgRect);
+
+        // Ground
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_FRect ground = {0, 500, 800, 10};
         SDL_RenderFillRect(renderer, &ground);
@@ -340,7 +352,7 @@ int main(int argc, char *argv[])
             SDL_RenderFillRect(renderer, &p2hitbox);
         }
 
-        // State text overlays
+        // State overlays
         if (state == SHOW_ROUND)
         {
             std::string roundText = "Round " + std::to_string(currentRound);
@@ -391,6 +403,7 @@ int main(int argc, char *argv[])
         SDL_RenderPresent(renderer);
     }
 
+    SDL_DestroyTexture(background);
     SDL_DestroyTexture(p1sprite);
     SDL_DestroyTexture(p2sprite);
     TTF_CloseFont(fontBig);
