@@ -14,7 +14,7 @@ enum GameState
 
 int main(int argc, char *argv[])
 {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
         std::cout << "SDL failed to init: " << SDL_GetError() << std::endl;
         return 1;
@@ -55,6 +55,62 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // Load audio
+    SDL_AudioSpec themeSpec, hitSpec, fightSpec;
+    Uint8 *themeData, *hitData, *fightData;
+    Uint32 themeLen, hitLen, fightLen;
+
+    if (!SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\theme.wav", &themeSpec, &themeData, &themeLen))
+    {
+        std::cout << "Theme failed to load: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+    if (!SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\hit.wav", &hitSpec, &hitData, &hitLen))
+    {
+        std::cout << "Hit sound failed to load: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+    if (!SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\fight.wav", &fightSpec, &fightData, &fightLen))
+    {
+        std::cout << "Fight sound failed to load: " << SDL_GetError() << std::endl;
+        return 1;
+    }
+
+    // Create audio streams
+    SDL_AudioStream *themeStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &themeSpec, NULL, NULL);
+    SDL_AudioStream *hitStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &hitSpec, NULL, NULL);
+    SDL_AudioStream *fightStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &fightSpec, NULL, NULL);
+
+    auto playTheme = [&]()
+    {
+        SDL_ClearAudioStream(themeStream);
+        for (int i = 0; i < 10; i++)
+            SDL_PutAudioStreamData(themeStream, themeData, themeLen);
+        SDL_ResumeAudioStreamDevice(themeStream);
+    };
+
+    auto playHit = [&]()
+    {
+        SDL_ClearAudioStream(hitStream);
+        SDL_PutAudioStreamData(hitStream, hitData, hitLen);
+        SDL_ResumeAudioStreamDevice(hitStream);
+    };
+
+    auto playFight = [&]()
+    {
+        SDL_ClearAudioStream(fightStream);
+        SDL_PutAudioStreamData(fightStream, fightData, fightLen);
+        SDL_ResumeAudioStreamDevice(fightStream);
+    };
+
+    auto stopTheme = [&]()
+    {
+        SDL_ClearAudioStream(themeStream);
+        SDL_PauseAudioStreamDevice(themeStream);
+    };
+
+    playTheme();
+
     float p1x = 100, p1y = 400;
     float p2x = 650, p2y = 400;
     float p1vy = 0, p2vy = 0;
@@ -62,10 +118,7 @@ int main(int argc, char *argv[])
     float p1health = 100, p2health = 100;
     bool p1attacking = false, p2attacking = false;
     int p1attackTimer = 0, p2attackTimer = 0;
-
-    // Hit flicker timers
     int p1flicker = 0, p2flicker = 0;
-
     float gravity = 1500.0f;
     float jumpForce = -600.0f;
     float groundY = 400.0f;
@@ -74,6 +127,7 @@ int main(int argc, char *argv[])
     std::string winner = "";
     GameState state = SHOW_ROUND;
     float stateTimer = 1.5f;
+    bool fightSoundPlayed = false;
 
     Uint64 lastTime = SDL_GetTicks();
     bool running = true;
@@ -116,6 +170,8 @@ int main(int argc, char *argv[])
                     winner = "";
                     state = SHOW_ROUND;
                     stateTimer = 1.5f;
+                    fightSoundPlayed = false;
+                    playTheme();
                 }
 
                 if (state == PLAYING)
@@ -146,6 +202,7 @@ int main(int argc, char *argv[])
 
         if (state == SHOW_ROUND)
         {
+            fightSoundPlayed = false;
             stateTimer -= deltaTime;
             if (stateTimer <= 0)
             {
@@ -155,6 +212,11 @@ int main(int argc, char *argv[])
         }
         else if (state == SHOW_FIGHT)
         {
+            if (!fightSoundPlayed)
+            {
+                playFight();
+                fightSoundPlayed = true;
+            }
             stateTimer -= deltaTime;
             if (stateTimer <= 0)
                 state = PLAYING;
@@ -212,7 +274,6 @@ int main(int argc, char *argv[])
                     p2attacking = false;
             }
 
-            // Flicker countdown
             if (p1flicker > 0)
                 p1flicker--;
             if (p2flicker > 0)
@@ -229,6 +290,7 @@ int main(int argc, char *argv[])
                 if (p2health < 0)
                     p2health = 0;
                 p2flicker = 10;
+                playHit();
             }
             if (p2attacking && SDL_HasRectIntersectionFloat(&p2hitbox, &p1rect))
             {
@@ -236,6 +298,7 @@ int main(int argc, char *argv[])
                 if (p1health < 0)
                     p1health = 0;
                 p1flicker = 10;
+                playHit();
             }
 
             if (p1health <= 0 || p2health <= 0)
@@ -249,11 +312,13 @@ int main(int argc, char *argv[])
                 {
                     winner = "Player 1 Wins!";
                     state = GAME_OVER;
+                    stopTheme();
                 }
                 else if (p2wins == 2)
                 {
                     winner = "Player 2 Wins!";
                     state = GAME_OVER;
+                    stopTheme();
                 }
                 else
                 {
@@ -284,6 +349,7 @@ int main(int argc, char *argv[])
                 p2attackTimer = 0;
                 p1flicker = 0;
                 p2flicker = 0;
+                fightSoundPlayed = false;
                 state = SHOW_ROUND;
                 stateTimer = 1.5f;
             }
@@ -293,23 +359,19 @@ int main(int argc, char *argv[])
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        // Background
         SDL_FRect bgRect = {0, 0, 800, 600};
         SDL_RenderTexture(renderer, background, NULL, &bgRect);
 
-        // Ground
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_FRect ground = {0, 500, 800, 10};
         SDL_RenderFillRect(renderer, &ground);
 
-        // Health bar backgrounds
         SDL_FRect p1healthBG = {50, 50, 200, 20};
         SDL_FRect p2healthBG = {550, 50, 200, 20};
         SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
         SDL_RenderFillRect(renderer, &p1healthBG);
         SDL_RenderFillRect(renderer, &p2healthBG);
 
-        // Health bars
         SDL_FRect p1healthBar = {50, 50, (p1health / 100.0f) * 200, 20};
         SDL_FRect p2healthBar = {550, 50, (p2health / 100.0f) * 200, 20};
         SDL_SetRenderDrawColor(renderer, p1health < 30 ? 255 : 0, p1health >= 30 ? 255 : 0, 0, 255);
@@ -317,7 +379,6 @@ int main(int argc, char *argv[])
         SDL_SetRenderDrawColor(renderer, p2health < 30 ? 255 : 0, p2health >= 30 ? 255 : 0, 0, 255);
         SDL_RenderFillRect(renderer, &p2healthBar);
 
-        // Player names
         SDL_Color white = {255, 255, 255, 255};
 
         SDL_Surface *name1surf = TTF_RenderText_Blended(fontSmall, "Player 1", 0, white);
@@ -334,7 +395,6 @@ int main(int argc, char *argv[])
         SDL_DestroySurface(name2surf);
         SDL_DestroyTexture(name2tex);
 
-        // Round wins dots
         for (int i = 0; i < p1wins; i++)
         {
             SDL_FRect dot = {50.0f + i * 20, 75, 15, 15};
@@ -348,7 +408,6 @@ int main(int argc, char *argv[])
             SDL_RenderFillRect(renderer, &dot);
         }
 
-        // Draw sprites with flicker effect
         SDL_FRect p1rect = {p1x, p1y, 80, 100};
         SDL_FRect p2rect = {p2x, p2y, 80, 100};
 
@@ -364,7 +423,6 @@ int main(int argc, char *argv[])
             SDL_SetTextureColorMod(p2sprite, 255, 255, 255);
         SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
 
-        // State overlays
         if (state == SHOW_ROUND)
         {
             std::string roundText = "Round " + std::to_string(currentRound);
@@ -415,6 +473,12 @@ int main(int argc, char *argv[])
         SDL_RenderPresent(renderer);
     }
 
+    SDL_free(themeData);
+    SDL_free(hitData);
+    SDL_free(fightData);
+    SDL_DestroyAudioStream(themeStream);
+    SDL_DestroyAudioStream(hitStream);
+    SDL_DestroyAudioStream(fightStream);
     SDL_DestroyTexture(background);
     SDL_DestroyTexture(p1sprite);
     SDL_DestroyTexture(p2sprite);
