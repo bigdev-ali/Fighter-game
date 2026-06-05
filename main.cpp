@@ -5,6 +5,7 @@
 
 enum GameState
 {
+    MENU,
     SHOW_ROUND,
     SHOW_FIGHT,
     PLAYING,
@@ -29,14 +30,16 @@ int main(int argc, char *argv[])
     TTF_Font *fontBig = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 80);
     TTF_Font *fontSmall = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 28);
     TTF_Font *fontMed = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 48);
+    TTF_Font *fontTitle = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 90);
+    TTF_Font *fontKO = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 120);
 
-    if (!fontBig || !fontSmall || !fontMed)
+    if (!fontBig || !fontSmall || !fontMed || !fontTitle || !fontKO)
     {
         std::cout << "Font failed to load: " << SDL_GetError() << std::endl;
         return 1;
     }
 
-    SDL_Window *window = SDL_CreateWindow("Fighter Game", 800, 600, 0);
+    SDL_Window *window = SDL_CreateWindow("King of Goon", 800, 600, 0);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, NULL);
 
     SDL_Texture *background = IMG_LoadTexture(renderer, "C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\background.png");
@@ -60,23 +63,10 @@ int main(int argc, char *argv[])
     Uint8 *themeData, *hitData, *fightData;
     Uint32 themeLen, hitLen, fightLen;
 
-    if (!SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\theme.wav", &themeSpec, &themeData, &themeLen))
-    {
-        std::cout << "Theme failed to load: " << SDL_GetError() << std::endl;
-        return 1;
-    }
-    if (!SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\hit.wav", &hitSpec, &hitData, &hitLen))
-    {
-        std::cout << "Hit sound failed to load: " << SDL_GetError() << std::endl;
-        return 1;
-    }
-    if (!SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\fight.wav", &fightSpec, &fightData, &fightLen))
-    {
-        std::cout << "Fight sound failed to load: " << SDL_GetError() << std::endl;
-        return 1;
-    }
+    SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\theme.wav", &themeSpec, &themeData, &themeLen);
+    SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\hit.wav", &hitSpec, &hitData, &hitLen);
+    SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\fight.wav", &fightSpec, &fightData, &fightLen);
 
-    // Create audio streams
     SDL_AudioStream *themeStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &themeSpec, NULL, NULL);
     SDL_AudioStream *hitStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &hitSpec, NULL, NULL);
     SDL_AudioStream *fightStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &fightSpec, NULL, NULL);
@@ -98,6 +88,7 @@ int main(int argc, char *argv[])
 
     auto playFight = [&]()
     {
+        SDL_PauseAudioStreamDevice(themeStream);
         SDL_ClearAudioStream(fightStream);
         SDL_PutAudioStreamData(fightStream, fightData, fightLen);
         SDL_ResumeAudioStreamDevice(fightStream);
@@ -109,8 +100,7 @@ int main(int argc, char *argv[])
         SDL_PauseAudioStreamDevice(themeStream);
     };
 
-    playTheme();
-
+    // Game variables
     float p1x = 100, p1y = 400;
     float p2x = 650, p2y = 400;
     float p1vy = 0, p2vy = 0;
@@ -125,9 +115,67 @@ int main(int argc, char *argv[])
     int currentRound = 1;
     int p1wins = 0, p2wins = 0;
     std::string winner = "";
-    GameState state = SHOW_ROUND;
+    GameState state = MENU;
     float stateTimer = 1.5f;
     bool fightSoundPlayed = false;
+
+    // Menu buttons
+    SDL_FRect btn2P = {250, 280, 300, 70};
+    SDL_FRect btnVSComp = {250, 380, 300, 70};
+
+    // Helper to draw a button
+    auto drawButton = [&](SDL_FRect rect, const char *text, bool hovered)
+    {
+        // Button background
+        if (hovered)
+            SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
+        else
+            SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
+        SDL_RenderFillRect(renderer, &rect);
+
+        // Button border
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderRect(renderer, &rect);
+
+        // Button text
+        SDL_Color white = {255, 255, 255, 255};
+        SDL_Surface *surf = TTF_RenderText_Blended(fontMed, text, 0, white);
+        SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
+        SDL_FRect textRect = {
+            rect.x + (rect.w - surf->w) / 2,
+            rect.y + (rect.h - surf->h) / 2,
+            (float)surf->w,
+            (float)surf->h};
+        SDL_RenderTexture(renderer, tex, NULL, &textRect);
+        SDL_DestroySurface(surf);
+        SDL_DestroyTexture(tex);
+    };
+
+    auto resetGame = [&]()
+    {
+        p1x = 100;
+        p1y = 400;
+        p2x = 650;
+        p2y = 400;
+        p1vy = 0;
+        p2vy = 0;
+        p1jumping = false;
+        p2jumping = false;
+        p1health = 100;
+        p2health = 100;
+        p1attacking = false;
+        p2attacking = false;
+        p1attackTimer = 0;
+        p2attackTimer = 0;
+        p1flicker = 0;
+        p2flicker = 0;
+        currentRound = 1;
+        p1wins = 0;
+        p2wins = 0;
+        winner = "";
+        stateTimer = 1.5f;
+        fightSoundPlayed = false;
+    };
 
     Uint64 lastTime = SDL_GetTicks();
     bool running = true;
@@ -139,39 +187,41 @@ int main(int argc, char *argv[])
         float deltaTime = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
+        // Get mouse position
+        float mouseX, mouseY;
+        SDL_GetMouseState(&mouseX, &mouseY);
+
+        bool hover2P = (mouseX >= btn2P.x && mouseX <= btn2P.x + btn2P.w &&
+                        mouseY >= btn2P.y && mouseY <= btn2P.y + btn2P.h);
+        bool hoverVSComp = (mouseX >= btnVSComp.x && mouseX <= btnVSComp.x + btnVSComp.w &&
+                            mouseY >= btnVSComp.y && mouseY <= btnVSComp.y + btnVSComp.h);
+
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_EVENT_QUIT)
                 running = false;
 
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
+            {
+                if (state == MENU)
+                {
+                    if (hover2P)
+                    {
+                        resetGame();
+                        state = SHOW_ROUND;
+                        playTheme();
+                    }
+                    // VS Computer does nothing for now
+                }
+            }
+
             if (event.type == SDL_EVENT_KEY_DOWN)
             {
                 if (state == GAME_OVER && event.key.scancode == SDL_SCANCODE_SPACE)
                 {
-                    p1x = 100;
-                    p1y = 400;
-                    p2x = 650;
-                    p2y = 400;
-                    p1vy = 0;
-                    p2vy = 0;
-                    p1jumping = false;
-                    p2jumping = false;
-                    p1health = 100;
-                    p2health = 100;
-                    p1attacking = false;
-                    p2attacking = false;
-                    p1attackTimer = 0;
-                    p2attackTimer = 0;
-                    p1flicker = 0;
-                    p2flicker = 0;
-                    currentRound = 1;
-                    p1wins = 0;
-                    p2wins = 0;
-                    winner = "";
-                    state = SHOW_ROUND;
-                    stateTimer = 1.5f;
-                    fightSoundPlayed = false;
-                    playTheme();
+                    resetGame();
+                    state = MENU;
+                    stopTheme();
                 }
 
                 if (state == PLAYING)
@@ -219,7 +269,10 @@ int main(int argc, char *argv[])
             }
             stateTimer -= deltaTime;
             if (stateTimer <= 0)
+            {
                 state = PLAYING;
+                SDL_ResumeAudioStreamDevice(themeStream);
+            }
         }
         else if (state == PLAYING)
         {
@@ -359,115 +412,146 @@ int main(int argc, char *argv[])
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        SDL_FRect bgRect = {0, 0, 800, 600};
-        SDL_RenderTexture(renderer, background, NULL, &bgRect);
-
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_FRect ground = {0, 500, 800, 10};
-        SDL_RenderFillRect(renderer, &ground);
-
-        SDL_FRect p1healthBG = {50, 50, 200, 20};
-        SDL_FRect p2healthBG = {550, 50, 200, 20};
-        SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-        SDL_RenderFillRect(renderer, &p1healthBG);
-        SDL_RenderFillRect(renderer, &p2healthBG);
-
-        SDL_FRect p1healthBar = {50, 50, (p1health / 100.0f) * 200, 20};
-        SDL_FRect p2healthBar = {550, 50, (p2health / 100.0f) * 200, 20};
-        SDL_SetRenderDrawColor(renderer, p1health < 30 ? 255 : 0, p1health >= 30 ? 255 : 0, 0, 255);
-        SDL_RenderFillRect(renderer, &p1healthBar);
-        SDL_SetRenderDrawColor(renderer, p2health < 30 ? 255 : 0, p2health >= 30 ? 255 : 0, 0, 255);
-        SDL_RenderFillRect(renderer, &p2healthBar);
-
-        SDL_Color white = {255, 255, 255, 255};
-
-        SDL_Surface *name1surf = TTF_RenderText_Blended(fontSmall, "Player 1", 0, white);
-        SDL_Texture *name1tex = SDL_CreateTextureFromSurface(renderer, name1surf);
-        SDL_FRect name1rect = {50, 5, (float)name1surf->w, (float)name1surf->h};
-        SDL_RenderTexture(renderer, name1tex, NULL, &name1rect);
-        SDL_DestroySurface(name1surf);
-        SDL_DestroyTexture(name1tex);
-
-        SDL_Surface *name2surf = TTF_RenderText_Blended(fontSmall, "Player 2", 0, white);
-        SDL_Texture *name2tex = SDL_CreateTextureFromSurface(renderer, name2surf);
-        SDL_FRect name2rect = {550, 5, (float)name2surf->w, (float)name2surf->h};
-        SDL_RenderTexture(renderer, name2tex, NULL, &name2rect);
-        SDL_DestroySurface(name2surf);
-        SDL_DestroyTexture(name2tex);
-
-        for (int i = 0; i < p1wins; i++)
+        if (state == MENU)
         {
-            SDL_FRect dot = {50.0f + i * 20, 75, 15, 15};
-            SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
-            SDL_RenderFillRect(renderer, &dot);
-        }
-        for (int i = 0; i < p2wins; i++)
-        {
-            SDL_FRect dot = {550.0f + i * 20, 75, 15, 15};
-            SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
-            SDL_RenderFillRect(renderer, &dot);
-        }
+            // Black background for menu
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
 
-        SDL_FRect p1rect = {p1x, p1y, 80, 100};
-        SDL_FRect p2rect = {p2x, p2y, 80, 100};
+            // Title
+            SDL_Color gold = {255, 215, 0, 255};
+            SDL_Surface *titleSurf = TTF_RenderText_Blended(fontTitle, "KING OF GOON", 0, gold);
+            SDL_Texture *titleTex = SDL_CreateTextureFromSurface(renderer, titleSurf);
+            SDL_FRect titleRect = {(800 - (float)titleSurf->w) / 2, 100, (float)titleSurf->w, (float)titleSurf->h};
+            SDL_RenderTexture(renderer, titleTex, NULL, &titleRect);
+            SDL_DestroySurface(titleSurf);
+            SDL_DestroyTexture(titleTex);
 
-        if (p1flicker > 0 && p1flicker % 2 == 0)
-            SDL_SetTextureColorMod(p1sprite, 255, 50, 50);
+            // Buttons
+            drawButton(btn2P, "2 Player", hover2P);
+            drawButton(btnVSComp, "VS Computer", hoverVSComp);
+        }
         else
-            SDL_SetTextureColorMod(p1sprite, 255, 255, 255);
-        SDL_RenderTexture(renderer, p1sprite, NULL, &p1rect);
+        {
+            // Game background
+            SDL_FRect bgRect = {0, 0, 800, 600};
+            SDL_RenderTexture(renderer, background, NULL, &bgRect);
 
-        if (p2flicker > 0 && p2flicker % 2 == 0)
-            SDL_SetTextureColorMod(p2sprite, 255, 50, 50);
-        else
-            SDL_SetTextureColorMod(p2sprite, 255, 255, 255);
-        SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
+            // Ground
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_FRect ground = {0, 500, 800, 10};
+            SDL_RenderFillRect(renderer, &ground);
 
-        if (state == SHOW_ROUND)
-        {
-            std::string roundText = "Round " + std::to_string(currentRound);
-            SDL_Surface *rsurf = TTF_RenderText_Blended(fontBig, roundText.c_str(), 0, white);
-            SDL_Texture *rtex = SDL_CreateTextureFromSurface(renderer, rsurf);
-            SDL_FRect rrect = {(800 - (float)rsurf->w) / 2, (600 - (float)rsurf->h) / 2, (float)rsurf->w, (float)rsurf->h};
-            SDL_RenderTexture(renderer, rtex, NULL, &rrect);
-            SDL_DestroySurface(rsurf);
-            SDL_DestroyTexture(rtex);
-        }
-        else if (state == SHOW_FIGHT)
-        {
-            SDL_Color yellow = {255, 215, 0, 255};
-            SDL_Surface *fsurf = TTF_RenderText_Blended(fontBig, "FIGHT!", 0, yellow);
-            SDL_Texture *ftex = SDL_CreateTextureFromSurface(renderer, fsurf);
-            SDL_FRect frect = {(800 - (float)fsurf->w) / 2, (600 - (float)fsurf->h) / 2, (float)fsurf->w, (float)fsurf->h};
-            SDL_RenderTexture(renderer, ftex, NULL, &frect);
-            SDL_DestroySurface(fsurf);
-            SDL_DestroyTexture(ftex);
-        }
-        else if (state == ROUND_OVER)
-        {
-            std::string koText = p1health <= 0 ? "Player 2 wins round!" : "Player 1 wins round!";
-            SDL_Surface *kosurf = TTF_RenderText_Blended(fontMed, koText.c_str(), 0, white);
-            SDL_Texture *kotex = SDL_CreateTextureFromSurface(renderer, kosurf);
-            SDL_FRect korect = {(800 - (float)kosurf->w) / 2, (600 - (float)kosurf->h) / 2, (float)kosurf->w, (float)kosurf->h};
-            SDL_RenderTexture(renderer, kotex, NULL, &korect);
-            SDL_DestroySurface(kosurf);
-            SDL_DestroyTexture(kotex);
-        }
-        else if (state == GAME_OVER)
-        {
-            SDL_Surface *gsurf = TTF_RenderText_Blended(fontBig, winner.c_str(), 0, white);
-            SDL_Texture *gtex = SDL_CreateTextureFromSurface(renderer, gsurf);
-            SDL_FRect grect = {(800 - (float)gsurf->w) / 2, (600 - (float)gsurf->h) / 2 - 60, (float)gsurf->w, (float)gsurf->h};
-            SDL_RenderTexture(renderer, gtex, NULL, &grect);
-            SDL_DestroySurface(gsurf);
-            SDL_DestroyTexture(gtex);
+            // Health bar backgrounds
+            SDL_FRect p1healthBG = {50, 50, 200, 20};
+            SDL_FRect p2healthBG = {550, 50, 200, 20};
+            SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+            SDL_RenderFillRect(renderer, &p1healthBG);
+            SDL_RenderFillRect(renderer, &p2healthBG);
 
-            SDL_Surface *rsurf = TTF_RenderText_Blended(fontMed, "Press SPACE to restart", 0, white);
-            SDL_Texture *rtex = SDL_CreateTextureFromSurface(renderer, rsurf);
-            SDL_FRect rrect = {(800 - (float)rsurf->w) / 2, (600 - (float)rsurf->h) / 2 + 60, (float)rsurf->w, (float)rsurf->h};
-            SDL_RenderTexture(renderer, rtex, NULL, &rrect);
-            SDL_DestroySurface(rsurf);
-            SDL_DestroyTexture(rtex);
+            // Health bars
+            SDL_FRect p1healthBar = {50, 50, (p1health / 100.0f) * 200, 20};
+            SDL_FRect p2healthBar = {550, 50, (p2health / 100.0f) * 200, 20};
+            SDL_SetRenderDrawColor(renderer, p1health < 30 ? 255 : 0, p1health >= 30 ? 255 : 0, 0, 255);
+            SDL_RenderFillRect(renderer, &p1healthBar);
+            SDL_SetRenderDrawColor(renderer, p2health < 30 ? 255 : 0, p2health >= 30 ? 255 : 0, 0, 255);
+            SDL_RenderFillRect(renderer, &p2healthBar);
+
+            // Player names
+            SDL_Color white = {255, 255, 255, 255};
+
+            SDL_Surface *name1surf = TTF_RenderText_Blended(fontSmall, "Player 1", 0, white);
+            SDL_Texture *name1tex = SDL_CreateTextureFromSurface(renderer, name1surf);
+            SDL_FRect name1rect = {50, 5, (float)name1surf->w, (float)name1surf->h};
+            SDL_RenderTexture(renderer, name1tex, NULL, &name1rect);
+            SDL_DestroySurface(name1surf);
+            SDL_DestroyTexture(name1tex);
+
+            SDL_Surface *name2surf = TTF_RenderText_Blended(fontSmall, "Player 2", 0, white);
+            SDL_Texture *name2tex = SDL_CreateTextureFromSurface(renderer, name2surf);
+            SDL_FRect name2rect = {550, 5, (float)name2surf->w, (float)name2surf->h};
+            SDL_RenderTexture(renderer, name2tex, NULL, &name2rect);
+            SDL_DestroySurface(name2surf);
+            SDL_DestroyTexture(name2tex);
+
+            // Round wins dots
+            for (int i = 0; i < p1wins; i++)
+            {
+                SDL_FRect dot = {50.0f + i * 20, 75, 15, 15};
+                SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+                SDL_RenderFillRect(renderer, &dot);
+            }
+            for (int i = 0; i < p2wins; i++)
+            {
+                SDL_FRect dot = {550.0f + i * 20, 75, 15, 15};
+                SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+                SDL_RenderFillRect(renderer, &dot);
+            }
+
+            // Sprites
+            SDL_FRect p1rect = {p1x, p1y, 80, 100};
+            SDL_FRect p2rect = {p2x, p2y, 80, 100};
+
+            if (p1flicker > 0 && p1flicker % 2 == 0)
+                SDL_SetTextureColorMod(p1sprite, 255, 50, 50);
+            else
+                SDL_SetTextureColorMod(p1sprite, 255, 255, 255);
+            SDL_RenderTexture(renderer, p1sprite, NULL, &p1rect);
+
+            if (p2flicker > 0 && p2flicker % 2 == 0)
+                SDL_SetTextureColorMod(p2sprite, 255, 50, 50);
+            else
+                SDL_SetTextureColorMod(p2sprite, 255, 255, 255);
+            SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
+
+            // State overlays
+            if (state == SHOW_ROUND)
+            {
+                std::string roundText = "Round " + std::to_string(currentRound);
+                SDL_Surface *rsurf = TTF_RenderText_Blended(fontBig, roundText.c_str(), 0, white);
+                SDL_Texture *rtex = SDL_CreateTextureFromSurface(renderer, rsurf);
+                SDL_FRect rrect = {(800 - (float)rsurf->w) / 2, (600 - (float)rsurf->h) / 2, (float)rsurf->w, (float)rsurf->h};
+                SDL_RenderTexture(renderer, rtex, NULL, &rrect);
+                SDL_DestroySurface(rsurf);
+                SDL_DestroyTexture(rtex);
+            }
+            else if (state == SHOW_FIGHT)
+            {
+                SDL_Color yellow = {255, 215, 0, 255};
+                SDL_Surface *fsurf = TTF_RenderText_Blended(fontBig, "FIGHT!", 0, yellow);
+                SDL_Texture *ftex = SDL_CreateTextureFromSurface(renderer, fsurf);
+                SDL_FRect frect = {(800 - (float)fsurf->w) / 2, (600 - (float)fsurf->h) / 2, (float)fsurf->w, (float)fsurf->h};
+                SDL_RenderTexture(renderer, ftex, NULL, &frect);
+                SDL_DestroySurface(fsurf);
+                SDL_DestroyTexture(ftex);
+            }
+            else if (state == ROUND_OVER)
+            {
+                // KO text
+                SDL_Color black = {0, 0, 0, 255};
+                SDL_Surface *kosurf = TTF_RenderText_Blended(fontKO, "K.O!", 0, black);
+                SDL_Texture *kotex = SDL_CreateTextureFromSurface(renderer, kosurf);
+                SDL_FRect korect = {(800 - (float)kosurf->w) / 2, (600 - (float)kosurf->h) / 2, (float)kosurf->w, (float)kosurf->h};
+                SDL_RenderTexture(renderer, kotex, NULL, &korect);
+                SDL_DestroySurface(kosurf);
+                SDL_DestroyTexture(kotex);
+            }
+            else if (state == GAME_OVER)
+            {
+                SDL_Surface *gsurf = TTF_RenderText_Blended(fontBig, winner.c_str(), 0, white);
+                SDL_Texture *gtex = SDL_CreateTextureFromSurface(renderer, gsurf);
+                SDL_FRect grect = {(800 - (float)gsurf->w) / 2, (600 - (float)gsurf->h) / 2 - 60, (float)gsurf->w, (float)gsurf->h};
+                SDL_RenderTexture(renderer, gtex, NULL, &grect);
+                SDL_DestroySurface(gsurf);
+                SDL_DestroyTexture(gtex);
+
+                SDL_Surface *rsurf = TTF_RenderText_Blended(fontMed, "Press SPACE to restart", 0, white);
+                SDL_Texture *rtex = SDL_CreateTextureFromSurface(renderer, rsurf);
+                SDL_FRect rrect = {(800 - (float)rsurf->w) / 2, (600 - (float)rsurf->h) / 2 + 60, (float)rsurf->w, (float)rsurf->h};
+                SDL_RenderTexture(renderer, rtex, NULL, &rrect);
+                SDL_DestroySurface(rsurf);
+                SDL_DestroyTexture(rtex);
+            }
         }
 
         SDL_RenderPresent(renderer);
@@ -485,6 +569,8 @@ int main(int argc, char *argv[])
     TTF_CloseFont(fontBig);
     TTF_CloseFont(fontSmall);
     TTF_CloseFont(fontMed);
+    TTF_CloseFont(fontTitle);
+    TTF_CloseFont(fontKO);
     TTF_Quit();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
