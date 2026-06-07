@@ -58,18 +58,15 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Load audio
-    SDL_AudioSpec themeSpec, hitSpec, fightSpec;
-    Uint8 *themeData, *hitData, *fightData;
-    Uint32 themeLen, hitLen, fightLen;
+    SDL_AudioSpec themeSpec, hitSpec;
+    Uint8 *themeData, *hitData;
+    Uint32 themeLen, hitLen;
 
     SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\theme.wav", &themeSpec, &themeData, &themeLen);
     SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\hit.wav", &hitSpec, &hitData, &hitLen);
-    SDL_LoadWAV("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\fight.wav", &fightSpec, &fightData, &fightLen);
 
     SDL_AudioStream *themeStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &themeSpec, NULL, NULL);
     SDL_AudioStream *hitStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &hitSpec, NULL, NULL);
-    SDL_AudioStream *fightStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &fightSpec, NULL, NULL);
 
     auto playTheme = [&]()
     {
@@ -86,21 +83,12 @@ int main(int argc, char *argv[])
         SDL_ResumeAudioStreamDevice(hitStream);
     };
 
-    auto playFight = [&]()
-    {
-        SDL_PauseAudioStreamDevice(themeStream);
-        SDL_ClearAudioStream(fightStream);
-        SDL_PutAudioStreamData(fightStream, fightData, fightLen);
-        SDL_ResumeAudioStreamDevice(fightStream);
-    };
-
     auto stopTheme = [&]()
     {
         SDL_ClearAudioStream(themeStream);
         SDL_PauseAudioStreamDevice(themeStream);
     };
 
-    // Game variables
     float p1x = 100, p1y = 400;
     float p2x = 650, p2y = 400;
     float p1vy = 0, p2vy = 0;
@@ -109,6 +97,7 @@ int main(int argc, char *argv[])
     bool p1attacking = false, p2attacking = false;
     int p1attackTimer = 0, p2attackTimer = 0;
     int p1flicker = 0, p2flicker = 0;
+    bool p1blocking = false, p2blocking = false;
     float gravity = 1500.0f;
     float jumpForce = -600.0f;
     float groundY = 400.0f;
@@ -117,27 +106,19 @@ int main(int argc, char *argv[])
     std::string winner = "";
     GameState state = MENU;
     float stateTimer = 1.5f;
-    bool fightSoundPlayed = false;
 
-    // Menu buttons
     SDL_FRect btn2P = {250, 280, 300, 70};
     SDL_FRect btnVSComp = {250, 380, 300, 70};
 
-    // Helper to draw a button
     auto drawButton = [&](SDL_FRect rect, const char *text, bool hovered)
     {
-        // Button background
         if (hovered)
             SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
         else
             SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
         SDL_RenderFillRect(renderer, &rect);
-
-        // Button border
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderRect(renderer, &rect);
-
-        // Button text
         SDL_Color white = {255, 255, 255, 255};
         SDL_Surface *surf = TTF_RenderText_Blended(fontMed, text, 0, white);
         SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
@@ -169,12 +150,13 @@ int main(int argc, char *argv[])
         p2attackTimer = 0;
         p1flicker = 0;
         p2flicker = 0;
+        p1blocking = false;
+        p2blocking = false;
         currentRound = 1;
         p1wins = 0;
         p2wins = 0;
         winner = "";
         stateTimer = 1.5f;
-        fightSoundPlayed = false;
     };
 
     Uint64 lastTime = SDL_GetTicks();
@@ -187,7 +169,6 @@ int main(int argc, char *argv[])
         float deltaTime = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
-        // Get mouse position
         float mouseX, mouseY;
         SDL_GetMouseState(&mouseX, &mouseY);
 
@@ -203,15 +184,11 @@ int main(int argc, char *argv[])
 
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
             {
-                if (state == MENU)
+                if (state == MENU && hover2P)
                 {
-                    if (hover2P)
-                    {
-                        resetGame();
-                        state = SHOW_ROUND;
-                        playTheme();
-                    }
-                    // VS Computer does nothing for now
+                    resetGame();
+                    state = SHOW_ROUND;
+                    playTheme();
                 }
             }
 
@@ -236,12 +213,12 @@ int main(int argc, char *argv[])
                         p2vy = jumpForce;
                         p2jumping = true;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_F && !p1attacking)
+                    if (event.key.scancode == SDL_SCANCODE_F && !p1attacking && !p1blocking)
                     {
                         p1attacking = true;
                         p1attackTimer = 15;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_K && !p2attacking)
+                    if (event.key.scancode == SDL_SCANCODE_K && !p2attacking && !p2blocking)
                     {
                         p2attacking = true;
                         p2attackTimer = 15;
@@ -250,9 +227,15 @@ int main(int argc, char *argv[])
             }
         }
 
+        if (state == PLAYING)
+        {
+            const bool *keys = SDL_GetKeyboardState(NULL);
+            p1blocking = keys[SDL_SCANCODE_S];
+            p2blocking = keys[SDL_SCANCODE_DOWN];
+        }
+
         if (state == SHOW_ROUND)
         {
-            fightSoundPlayed = false;
             stateTimer -= deltaTime;
             if (stateTimer <= 0)
             {
@@ -262,30 +245,28 @@ int main(int argc, char *argv[])
         }
         else if (state == SHOW_FIGHT)
         {
-            if (!fightSoundPlayed)
-            {
-                playFight();
-                fightSoundPlayed = true;
-            }
             stateTimer -= deltaTime;
             if (stateTimer <= 0)
-            {
                 state = PLAYING;
-                SDL_ResumeAudioStreamDevice(themeStream);
-            }
         }
         else if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
 
-            if (keys[SDL_SCANCODE_A])
-                p1x -= 300 * deltaTime;
-            if (keys[SDL_SCANCODE_D])
-                p1x += 300 * deltaTime;
-            if (keys[SDL_SCANCODE_LEFT])
-                p2x -= 300 * deltaTime;
-            if (keys[SDL_SCANCODE_RIGHT])
-                p2x += 300 * deltaTime;
+            if (!p1blocking)
+            {
+                if (keys[SDL_SCANCODE_A])
+                    p1x -= 300 * deltaTime;
+                if (keys[SDL_SCANCODE_D])
+                    p1x += 300 * deltaTime;
+            }
+            if (!p2blocking)
+            {
+                if (keys[SDL_SCANCODE_LEFT])
+                    p2x -= 300 * deltaTime;
+                if (keys[SDL_SCANCODE_RIGHT])
+                    p2x += 300 * deltaTime;
+            }
 
             if (p1x < 0)
                 p1x = 0;
@@ -339,19 +320,34 @@ int main(int argc, char *argv[])
 
             if (p1attacking && SDL_HasRectIntersectionFloat(&p1hitbox, &p2rect))
             {
-                p2health -= 0.5f;
+                if (p2blocking)
+                {
+                    p2health -= 0.1f;
+                }
+                else
+                {
+                    p2health -= 0.5f;
+                    p2flicker = 10;
+                    playHit();
+                }
                 if (p2health < 0)
                     p2health = 0;
-                p2flicker = 10;
-                playHit();
             }
+
             if (p2attacking && SDL_HasRectIntersectionFloat(&p2hitbox, &p1rect))
             {
-                p1health -= 0.5f;
+                if (p1blocking)
+                {
+                    p1health -= 0.1f;
+                }
+                else
+                {
+                    p1health -= 0.5f;
+                    p1flicker = 10;
+                    playHit();
+                }
                 if (p1health < 0)
                     p1health = 0;
-                p1flicker = 10;
-                playHit();
             }
 
             if (p1health <= 0 || p2health <= 0)
@@ -402,7 +398,8 @@ int main(int argc, char *argv[])
                 p2attackTimer = 0;
                 p1flicker = 0;
                 p2flicker = 0;
-                fightSoundPlayed = false;
+                p1blocking = false;
+                p2blocking = false;
                 state = SHOW_ROUND;
                 stateTimer = 1.5f;
             }
@@ -414,11 +411,6 @@ int main(int argc, char *argv[])
 
         if (state == MENU)
         {
-            // Black background for menu
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-
-            // Title
             SDL_Color gold = {255, 215, 0, 255};
             SDL_Surface *titleSurf = TTF_RenderText_Blended(fontTitle, "KING OF GOON", 0, gold);
             SDL_Texture *titleTex = SDL_CreateTextureFromSurface(renderer, titleSurf);
@@ -427,29 +419,24 @@ int main(int argc, char *argv[])
             SDL_DestroySurface(titleSurf);
             SDL_DestroyTexture(titleTex);
 
-            // Buttons
             drawButton(btn2P, "2 Player", hover2P);
             drawButton(btnVSComp, "VS Computer", hoverVSComp);
         }
         else
         {
-            // Game background
             SDL_FRect bgRect = {0, 0, 800, 600};
             SDL_RenderTexture(renderer, background, NULL, &bgRect);
 
-            // Ground
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
             SDL_FRect ground = {0, 500, 800, 10};
             SDL_RenderFillRect(renderer, &ground);
 
-            // Health bar backgrounds
             SDL_FRect p1healthBG = {50, 50, 200, 20};
             SDL_FRect p2healthBG = {550, 50, 200, 20};
             SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
             SDL_RenderFillRect(renderer, &p1healthBG);
             SDL_RenderFillRect(renderer, &p2healthBG);
 
-            // Health bars
             SDL_FRect p1healthBar = {50, 50, (p1health / 100.0f) * 200, 20};
             SDL_FRect p2healthBar = {550, 50, (p2health / 100.0f) * 200, 20};
             SDL_SetRenderDrawColor(renderer, p1health < 30 ? 255 : 0, p1health >= 30 ? 255 : 0, 0, 255);
@@ -457,7 +444,6 @@ int main(int argc, char *argv[])
             SDL_SetRenderDrawColor(renderer, p2health < 30 ? 255 : 0, p2health >= 30 ? 255 : 0, 0, 255);
             SDL_RenderFillRect(renderer, &p2healthBar);
 
-            // Player names
             SDL_Color white = {255, 255, 255, 255};
 
             SDL_Surface *name1surf = TTF_RenderText_Blended(fontSmall, "Player 1", 0, white);
@@ -474,7 +460,6 @@ int main(int argc, char *argv[])
             SDL_DestroySurface(name2surf);
             SDL_DestroyTexture(name2tex);
 
-            // Round wins dots
             for (int i = 0; i < p1wins; i++)
             {
                 SDL_FRect dot = {50.0f + i * 20, 75, 15, 15};
@@ -488,23 +473,25 @@ int main(int argc, char *argv[])
                 SDL_RenderFillRect(renderer, &dot);
             }
 
-            // Sprites
             SDL_FRect p1rect = {p1x, p1y, 80, 100};
             SDL_FRect p2rect = {p2x, p2y, 80, 100};
 
-            if (p1flicker > 0 && p1flicker % 2 == 0)
+            if (p1blocking)
+                SDL_SetTextureColorMod(p1sprite, 50, 50, 255);
+            else if (p1flicker > 0 && p1flicker % 2 == 0)
                 SDL_SetTextureColorMod(p1sprite, 255, 50, 50);
             else
                 SDL_SetTextureColorMod(p1sprite, 255, 255, 255);
             SDL_RenderTexture(renderer, p1sprite, NULL, &p1rect);
 
-            if (p2flicker > 0 && p2flicker % 2 == 0)
+            if (p2blocking)
+                SDL_SetTextureColorMod(p2sprite, 50, 50, 255);
+            else if (p2flicker > 0 && p2flicker % 2 == 0)
                 SDL_SetTextureColorMod(p2sprite, 255, 50, 50);
             else
                 SDL_SetTextureColorMod(p2sprite, 255, 255, 255);
             SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
 
-            // State overlays
             if (state == SHOW_ROUND)
             {
                 std::string roundText = "Round " + std::to_string(currentRound);
@@ -527,7 +514,6 @@ int main(int argc, char *argv[])
             }
             else if (state == ROUND_OVER)
             {
-                // KO text
                 SDL_Color black = {0, 0, 0, 255};
                 SDL_Surface *kosurf = TTF_RenderText_Blended(fontKO, "K.O!", 0, black);
                 SDL_Texture *kotex = SDL_CreateTextureFromSurface(renderer, kosurf);
@@ -545,7 +531,7 @@ int main(int argc, char *argv[])
                 SDL_DestroySurface(gsurf);
                 SDL_DestroyTexture(gtex);
 
-                SDL_Surface *rsurf = TTF_RenderText_Blended(fontMed, "Press SPACE to restart", 0, white);
+                SDL_Surface *rsurf = TTF_RenderText_Blended(fontMed, "Press SPACE to go to menu", 0, white);
                 SDL_Texture *rtex = SDL_CreateTextureFromSurface(renderer, rsurf);
                 SDL_FRect rrect = {(800 - (float)rsurf->w) / 2, (600 - (float)rsurf->h) / 2 + 60, (float)rsurf->w, (float)rsurf->h};
                 SDL_RenderTexture(renderer, rtex, NULL, &rrect);
@@ -559,10 +545,8 @@ int main(int argc, char *argv[])
 
     SDL_free(themeData);
     SDL_free(hitData);
-    SDL_free(fightData);
     SDL_DestroyAudioStream(themeStream);
     SDL_DestroyAudioStream(hitStream);
-    SDL_DestroyAudioStream(fightStream);
     SDL_DestroyTexture(background);
     SDL_DestroyTexture(p1sprite);
     SDL_DestroyTexture(p2sprite);
