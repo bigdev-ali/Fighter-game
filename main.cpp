@@ -3,15 +3,7 @@
 #include <SDL3_image/SDL_image.h>
 #include <iostream>
 
-enum GameState
-{
-    MENU,
-    SHOW_ROUND,
-    SHOW_FIGHT,
-    PLAYING,
-    ROUND_OVER,
-    GAME_OVER
-};
+enum GameState { MENU, SHOW_ROUND, SHOW_FIGHT, PLAYING, ROUND_OVER, GAME_OVER };
 
 int main(int argc, char *argv[])
 {
@@ -32,8 +24,9 @@ int main(int argc, char *argv[])
     TTF_Font *fontMed = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 48);
     TTF_Font *fontTitle = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 90);
     TTF_Font *fontKO = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 120);
+    TTF_Font *fontTimer = TTF_OpenFont("C:\\Users\\DC\\OneDrive\\Desktop\\fighter-game\\times.ttf", 36);
 
-    if (!fontBig || !fontSmall || !fontMed || !fontTitle || !fontKO)
+    if (!fontBig || !fontSmall || !fontMed || !fontTitle || !fontKO || !fontTimer)
     {
         std::cout << "Font failed to load: " << SDL_GetError() << std::endl;
         return 1;
@@ -68,23 +61,20 @@ int main(int argc, char *argv[])
     SDL_AudioStream *themeStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &themeSpec, NULL, NULL);
     SDL_AudioStream *hitStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &hitSpec, NULL, NULL);
 
-    auto playTheme = [&]()
-    {
+    auto playTheme = [&]() {
         SDL_ClearAudioStream(themeStream);
         for (int i = 0; i < 10; i++)
             SDL_PutAudioStreamData(themeStream, themeData, themeLen);
         SDL_ResumeAudioStreamDevice(themeStream);
     };
 
-    auto playHit = [&]()
-    {
+    auto playHit = [&]() {
         SDL_ClearAudioStream(hitStream);
         SDL_PutAudioStreamData(hitStream, hitData, hitLen);
         SDL_ResumeAudioStreamDevice(hitStream);
     };
 
-    auto stopTheme = [&]()
-    {
+    auto stopTheme = [&]() {
         SDL_ClearAudioStream(themeStream);
         SDL_PauseAudioStreamDevice(themeStream);
     };
@@ -94,8 +84,15 @@ int main(int argc, char *argv[])
     float p1vy = 0, p2vy = 0;
     bool p1jumping = false, p2jumping = false;
     float p1health = 100, p2health = 100;
+
+    // Punch
     bool p1attacking = false, p2attacking = false;
     int p1attackTimer = 0, p2attackTimer = 0;
+
+    // Kick
+    bool p1kicking = false, p2kicking = false;
+    int p1kickTimer = 0, p2kickTimer = 0;
+
     int p1flicker = 0, p2flicker = 0;
     bool p1blocking = false, p2blocking = false;
     float gravity = 1500.0f;
@@ -107,11 +104,13 @@ int main(int argc, char *argv[])
     GameState state = MENU;
     float stateTimer = 1.5f;
 
+    // Round timer
+    float roundTimer = 60.0f;
+
     SDL_FRect btn2P = {250, 280, 300, 70};
     SDL_FRect btnVSComp = {250, 380, 300, 70};
 
-    auto drawButton = [&](SDL_FRect rect, const char *text, bool hovered)
-    {
+    auto drawButton = [&](SDL_FRect rect, const char *text, bool hovered) {
         if (hovered)
             SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
         else
@@ -126,37 +125,30 @@ int main(int argc, char *argv[])
             rect.x + (rect.w - surf->w) / 2,
             rect.y + (rect.h - surf->h) / 2,
             (float)surf->w,
-            (float)surf->h};
+            (float)surf->h
+        };
         SDL_RenderTexture(renderer, tex, NULL, &textRect);
         SDL_DestroySurface(surf);
         SDL_DestroyTexture(tex);
     };
 
-    auto resetGame = [&]()
-    {
-        p1x = 100;
-        p1y = 400;
-        p2x = 650;
-        p2y = 400;
-        p1vy = 0;
-        p2vy = 0;
-        p1jumping = false;
-        p2jumping = false;
-        p1health = 100;
-        p2health = 100;
-        p1attacking = false;
-        p2attacking = false;
-        p1attackTimer = 0;
-        p2attackTimer = 0;
-        p1flicker = 0;
-        p2flicker = 0;
-        p1blocking = false;
-        p2blocking = false;
+    auto resetGame = [&]() {
+        p1x = 100; p1y = 400;
+        p2x = 650; p2y = 400;
+        p1vy = 0; p2vy = 0;
+        p1jumping = false; p2jumping = false;
+        p1health = 100; p2health = 100;
+        p1attacking = false; p2attacking = false;
+        p1attackTimer = 0; p2attackTimer = 0;
+        p1kicking = false; p2kicking = false;
+        p1kickTimer = 0; p2kickTimer = 0;
+        p1flicker = 0; p2flicker = 0;
+        p1blocking = false; p2blocking = false;
         currentRound = 1;
-        p1wins = 0;
-        p2wins = 0;
+        p1wins = 0; p2wins = 0;
         winner = "";
         stateTimer = 1.5f;
+        roundTimer = 60.0f;
     };
 
     Uint64 lastTime = SDL_GetTicks();
@@ -213,15 +205,27 @@ int main(int argc, char *argv[])
                         p2vy = jumpForce;
                         p2jumping = true;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_F && !p1attacking && !p1blocking)
+                    // Punch
+                    if (event.key.scancode == SDL_SCANCODE_F && !p1attacking && !p1blocking && !p1kicking)
                     {
                         p1attacking = true;
                         p1attackTimer = 15;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_K && !p2attacking && !p2blocking)
+                    if (event.key.scancode == SDL_SCANCODE_K && !p2attacking && !p2blocking && !p2kicking)
                     {
                         p2attacking = true;
                         p2attackTimer = 15;
+                    }
+                    // Kick
+                    if (event.key.scancode == SDL_SCANCODE_G && !p1kicking && !p1blocking && !p1attacking)
+                    {
+                        p1kicking = true;
+                        p1kickTimer = 20;
+                    }
+                    if (event.key.scancode == SDL_SCANCODE_L && !p2kicking && !p2blocking && !p2attacking)
+                    {
+                        p2kicking = true;
+                        p2kickTimer = 20;
                     }
                 }
             }
@@ -237,138 +241,119 @@ int main(int argc, char *argv[])
         if (state == SHOW_ROUND)
         {
             stateTimer -= deltaTime;
-            if (stateTimer <= 0)
-            {
-                state = SHOW_FIGHT;
-                stateTimer = 1.0f;
-            }
+            if (stateTimer <= 0) { state = SHOW_FIGHT; stateTimer = 1.0f; }
         }
         else if (state == SHOW_FIGHT)
         {
             stateTimer -= deltaTime;
-            if (stateTimer <= 0)
-                state = PLAYING;
+            if (stateTimer <= 0) state = PLAYING;
         }
         else if (state == PLAYING)
         {
+            // Count down round timer
+            roundTimer -= deltaTime;
+
+            // Timer ran out
+            if (roundTimer <= 0)
+            {
+                roundTimer = 0;
+                if (p1health > p2health) p1wins++;
+                else if (p2health > p1health) p2wins++;
+                // draw — nobody gets a point
+
+                if (p1wins == 2) { winner = "Player 1 Wins!"; state = GAME_OVER; stopTheme(); }
+                else if (p2wins == 2) { winner = "Player 2 Wins!"; state = GAME_OVER; stopTheme(); }
+                else
+                {
+                    currentRound++;
+                    state = ROUND_OVER;
+                    stateTimer = 2.0f;
+                }
+            }
+
             const bool *keys = SDL_GetKeyboardState(NULL);
 
             if (!p1blocking)
             {
-                if (keys[SDL_SCANCODE_A])
-                    p1x -= 300 * deltaTime;
-                if (keys[SDL_SCANCODE_D])
-                    p1x += 300 * deltaTime;
+                if (keys[SDL_SCANCODE_A]) p1x -= 300 * deltaTime;
+                if (keys[SDL_SCANCODE_D]) p1x += 300 * deltaTime;
             }
             if (!p2blocking)
             {
-                if (keys[SDL_SCANCODE_LEFT])
-                    p2x -= 300 * deltaTime;
-                if (keys[SDL_SCANCODE_RIGHT])
-                    p2x += 300 * deltaTime;
+                if (keys[SDL_SCANCODE_LEFT]) p2x -= 300 * deltaTime;
+                if (keys[SDL_SCANCODE_RIGHT]) p2x += 300 * deltaTime;
             }
 
-            if (p1x < 0)
-                p1x = 0;
-            if (p1x > 750)
-                p1x = 750;
-            if (p2x < 0)
-                p2x = 0;
-            if (p2x > 750)
-                p2x = 750;
+            if (p1x < 0) p1x = 0;
+            if (p1x > 750) p1x = 750;
+            if (p2x < 0) p2x = 0;
+            if (p2x > 750) p2x = 750;
 
             p1vy += gravity * deltaTime;
             p1y += p1vy * deltaTime;
-            if (p1y >= groundY)
-            {
-                p1y = groundY;
-                p1vy = 0;
-                p1jumping = false;
-            }
+            if (p1y >= groundY) { p1y = groundY; p1vy = 0; p1jumping = false; }
 
             p2vy += gravity * deltaTime;
             p2y += p2vy * deltaTime;
-            if (p2y >= groundY)
-            {
-                p2y = groundY;
-                p2vy = 0;
-                p2jumping = false;
-            }
+            if (p2y >= groundY) { p2y = groundY; p2vy = 0; p2jumping = false; }
 
-            if (p1attacking)
-            {
-                p1attackTimer--;
-                if (p1attackTimer <= 0)
-                    p1attacking = false;
-            }
-            if (p2attacking)
-            {
-                p2attackTimer--;
-                if (p2attackTimer <= 0)
-                    p2attacking = false;
-            }
+            // Punch timers
+            if (p1attacking) { p1attackTimer--; if (p1attackTimer <= 0) p1attacking = false; }
+            if (p2attacking) { p2attackTimer--; if (p2attackTimer <= 0) p2attacking = false; }
 
-            if (p1flicker > 0)
-                p1flicker--;
-            if (p2flicker > 0)
-                p2flicker--;
+            // Kick timers
+            if (p1kicking) { p1kickTimer--; if (p1kickTimer <= 0) p1kicking = false; }
+            if (p2kicking) { p2kickTimer--; if (p2kickTimer <= 0) p2kicking = false; }
 
-            SDL_FRect p1hitbox = {p1x + 50, p1y + 20, 60, 30};
-            SDL_FRect p2hitbox = {p2x - 60, p2y + 20, 60, 30};
+            if (p1flicker > 0) p1flicker--;
+            if (p2flicker > 0) p2flicker--;
+
             SDL_FRect p1rect = {p1x, p1y, 80, 100};
             SDL_FRect p2rect = {p2x, p2y, 80, 100};
 
-            if (p1attacking && SDL_HasRectIntersectionFloat(&p1hitbox, &p2rect))
+            // Punch hitboxes
+            SDL_FRect p1punchhitbox = {p1x + 80, p1y + 20, 60, 30};
+            SDL_FRect p2punchhitbox = {p2x - 60, p2y + 20, 60, 30};
+
+            // Kick hitboxes — lower and wider
+            SDL_FRect p1kickhitbox = {p1x + 80, p1y + 60, 80, 30};
+            SDL_FRect p2kickhitbox = {p2x - 80, p2y + 60, 80, 30};
+
+            // Punch collision
+            if (p1attacking && SDL_HasRectIntersectionFloat(&p1punchhitbox, &p2rect))
             {
-                if (p2blocking)
-                {
-                    p2health -= 0.1f;
-                }
-                else
-                {
-                    p2health -= 0.5f;
-                    p2flicker = 10;
-                    playHit();
-                }
-                if (p2health < 0)
-                    p2health = 0;
+                if (p2blocking) { p2health -= 0.1f; }
+                else { p2health -= 0.5f; p2flicker = 10; playHit(); }
+                if (p2health < 0) p2health = 0;
+            }
+            if (p2attacking && SDL_HasRectIntersectionFloat(&p2punchhitbox, &p1rect))
+            {
+                if (p1blocking) { p1health -= 0.1f; }
+                else { p1health -= 0.5f; p1flicker = 10; playHit(); }
+                if (p1health < 0) p1health = 0;
             }
 
-            if (p2attacking && SDL_HasRectIntersectionFloat(&p2hitbox, &p1rect))
+            // Kick collision
+            if (p1kicking && SDL_HasRectIntersectionFloat(&p1kickhitbox, &p2rect))
             {
-                if (p1blocking)
-                {
-                    p1health -= 0.1f;
-                }
-                else
-                {
-                    p1health -= 0.5f;
-                    p1flicker = 10;
-                    playHit();
-                }
-                if (p1health < 0)
-                    p1health = 0;
+                if (p2blocking) { p2health -= 0.15f; }
+                else { p2health -= 0.7f; p2flicker = 10; playHit(); }
+                if (p2health < 0) p2health = 0;
+            }
+            if (p2kicking && SDL_HasRectIntersectionFloat(&p2kickhitbox, &p1rect))
+            {
+                if (p1blocking) { p1health -= 0.15f; }
+                else { p1health -= 0.7f; p1flicker = 10; playHit(); }
+                if (p1health < 0) p1health = 0;
             }
 
             if (p1health <= 0 || p2health <= 0)
             {
-                if (p1health <= 0)
-                    p2wins++;
-                if (p2health <= 0)
-                    p1wins++;
+                if (p1health <= 0) p2wins++;
+                if (p2health <= 0) p1wins++;
 
-                if (p1wins == 2)
-                {
-                    winner = "Player 1 Wins!";
-                    state = GAME_OVER;
-                    stopTheme();
-                }
-                else if (p2wins == 2)
-                {
-                    winner = "Player 2 Wins!";
-                    state = GAME_OVER;
-                    stopTheme();
-                }
+                if (p1wins == 2) { winner = "Player 1 Wins!"; state = GAME_OVER; stopTheme(); }
+                else if (p2wins == 2) { winner = "Player 2 Wins!"; state = GAME_OVER; stopTheme(); }
                 else
                 {
                     currentRound++;
@@ -382,24 +367,18 @@ int main(int argc, char *argv[])
             stateTimer -= deltaTime;
             if (stateTimer <= 0)
             {
-                p1x = 100;
-                p1y = 400;
-                p2x = 650;
-                p2y = 400;
-                p1vy = 0;
-                p2vy = 0;
-                p1jumping = false;
-                p2jumping = false;
-                p1health = 100;
-                p2health = 100;
-                p1attacking = false;
-                p2attacking = false;
-                p1attackTimer = 0;
-                p2attackTimer = 0;
-                p1flicker = 0;
-                p2flicker = 0;
-                p1blocking = false;
-                p2blocking = false;
+                p1x = 100; p1y = 400;
+                p2x = 650; p2y = 400;
+                p1vy = 0; p2vy = 0;
+                p1jumping = false; p2jumping = false;
+                p1health = 100; p2health = 100;
+                p1attacking = false; p2attacking = false;
+                p1attackTimer = 0; p2attackTimer = 0;
+                p1kicking = false; p2kicking = false;
+                p1kickTimer = 0; p2kickTimer = 0;
+                p1flicker = 0; p2flicker = 0;
+                p1blocking = false; p2blocking = false;
+                roundTimer = 60.0f;
                 state = SHOW_ROUND;
                 stateTimer = 1.5f;
             }
@@ -446,6 +425,7 @@ int main(int argc, char *argv[])
 
             SDL_Color white = {255, 255, 255, 255};
 
+            // Player names
             SDL_Surface *name1surf = TTF_RenderText_Blended(fontSmall, "Player 1", 0, white);
             SDL_Texture *name1tex = SDL_CreateTextureFromSurface(renderer, name1surf);
             SDL_FRect name1rect = {50, 5, (float)name1surf->w, (float)name1surf->h};
@@ -460,6 +440,7 @@ int main(int argc, char *argv[])
             SDL_DestroySurface(name2surf);
             SDL_DestroyTexture(name2tex);
 
+            // Round wins dots
             for (int i = 0; i < p1wins; i++)
             {
                 SDL_FRect dot = {50.0f + i * 20, 75, 15, 15};
@@ -473,6 +454,17 @@ int main(int argc, char *argv[])
                 SDL_RenderFillRect(renderer, &dot);
             }
 
+            // Round timer — centered between health bars
+            int timerSeconds = (int)roundTimer;
+            SDL_Color timerColor = timerSeconds <= 10 ? SDL_Color{255, 0, 0, 255} : SDL_Color{255, 255, 255, 255};
+            SDL_Surface *timerSurf = TTF_RenderText_Blended(fontTimer, std::to_string(timerSeconds).c_str(), 0, timerColor);
+            SDL_Texture *timerTex = SDL_CreateTextureFromSurface(renderer, timerSurf);
+            SDL_FRect timerRect = {(800 - (float)timerSurf->w) / 2, 40, (float)timerSurf->w, (float)timerSurf->h};
+            SDL_RenderTexture(renderer, timerTex, NULL, &timerRect);
+            SDL_DestroySurface(timerSurf);
+            SDL_DestroyTexture(timerTex);
+
+            // Sprites
             SDL_FRect p1rect = {p1x, p1y, 80, 100};
             SDL_FRect p2rect = {p2x, p2y, 80, 100};
 
@@ -492,6 +484,7 @@ int main(int argc, char *argv[])
                 SDL_SetTextureColorMod(p2sprite, 255, 255, 255);
             SDL_RenderTexture(renderer, p2sprite, NULL, &p2rect);
 
+            // State overlays
             if (state == SHOW_ROUND)
             {
                 std::string roundText = "Round " + std::to_string(currentRound);
@@ -555,6 +548,7 @@ int main(int argc, char *argv[])
     TTF_CloseFont(fontMed);
     TTF_CloseFont(fontTitle);
     TTF_CloseFont(fontKO);
+    TTF_CloseFont(fontTimer);
     TTF_Quit();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
