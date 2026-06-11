@@ -7,6 +7,7 @@
 enum GameState
 {
     MENU,
+    ENTER_NAMES,
     SHOW_ROUND,
     SHOW_FIGHT,
     PLAYING,
@@ -14,9 +15,6 @@ enum GameState
     GAME_OVER
 };
 
-// ========================
-// PLAYER CLASS
-// ========================
 struct Player
 {
     float x, y;
@@ -29,7 +27,6 @@ struct Player
     SDL_Texture *sprite;
     std::string name;
 
-    // Constructor — sets default values
     Player(std::string playerName, SDL_Texture *tex, float startX)
     {
         name = playerName;
@@ -64,7 +61,6 @@ struct Player
 
     void update(float deltaTime, float gravity, float groundY)
     {
-        // Apply gravity
         vy += gravity * deltaTime;
         y += vy * deltaTime;
         if (y >= groundY)
@@ -73,8 +69,6 @@ struct Player
             vy = 0;
             jumping = false;
         }
-
-        // Attack timers
         if (attacking)
         {
             attackTimer--;
@@ -87,8 +81,6 @@ struct Player
             if (kickTimer <= 0)
                 kicking = false;
         }
-
-        // Flicker countdown
         if (flicker > 0)
             flicker--;
     }
@@ -96,14 +88,12 @@ struct Player
     void draw(SDL_Renderer *renderer)
     {
         SDL_FRect rect = {x, y, 80, 100};
-
         if (blocking)
             SDL_SetTextureColorMod(sprite, 50, 50, 255);
         else if (flicker > 0 && flicker % 2 == 0)
             SDL_SetTextureColorMod(sprite, 255, 50, 50);
         else
             SDL_SetTextureColorMod(sprite, 255, 255, 255);
-
         SDL_RenderTexture(renderer, sprite, NULL, &rect);
     }
 
@@ -116,6 +106,7 @@ struct Player
     }
 
     SDL_FRect getRect() { return {x, y, 80, 100}; }
+
     SDL_FRect getPunchHitbox(bool facingRight)
     {
         if (facingRight)
@@ -123,6 +114,7 @@ struct Player
         else
             return {x - 80, y + 20, 60, 30};
     }
+
     SDL_FRect getKickHitbox(bool facingRight)
     {
         if (facingRight)
@@ -131,7 +123,7 @@ struct Player
             return {x - 80, y + 60, 80, 30};
     }
 };
-// MAIN
+
 int main(int argc, char *argv[])
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
@@ -172,7 +164,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Audio
     SDL_AudioSpec themeSpec, hitSpec;
     Uint8 *themeData, *hitData;
     Uint32 themeLen, hitLen;
@@ -204,11 +195,9 @@ int main(int argc, char *argv[])
         SDL_PauseAudioStreamDevice(themeStream);
     };
 
-    // Create players
     Player p1("Player 1", p1tex, 100);
     Player p2("Player 2", p2tex, 650);
 
-    // Game state
     float gravity = 1500.0f;
     float jumpForce = -600.0f;
     float groundY = 400.0f;
@@ -218,6 +207,11 @@ int main(int argc, char *argv[])
     GameState state = MENU;
     float stateTimer = 1.5f;
     float roundTimer = 60.0f;
+
+    // Name input
+    std::string p1NameInput = "";
+    std::string p2NameInput = "";
+    bool enteringP1 = true;
 
     SDL_FRect btn2P = {250, 280, 300, 70};
     SDL_FRect btnVSComp = {250, 380, 300, 70};
@@ -246,6 +240,8 @@ int main(int argc, char *argv[])
 
     auto drawText = [&](TTF_Font *font, const char *text, SDL_Color color, float x, float y)
     {
+        if (std::string(text).empty())
+            return;
         SDL_Surface *surf = TTF_RenderText_Blended(font, text, 0, color);
         SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
         SDL_FRect rect = {x, y, (float)surf->w, (float)surf->h};
@@ -256,6 +252,8 @@ int main(int argc, char *argv[])
 
     auto drawTextCentered = [&](TTF_Font *font, const char *text, SDL_Color color, float y)
     {
+        if (std::string(text).empty())
+            return;
         SDL_Surface *surf = TTF_RenderText_Blended(font, text, 0, color);
         SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
         SDL_FRect rect = {(800 - (float)surf->w) / 2, y, (float)surf->w, (float)surf->h};
@@ -311,14 +309,71 @@ int main(int argc, char *argv[])
             {
                 if (state == MENU && hover2P)
                 {
-                    resetGame();
-                    state = SHOW_ROUND;
-                    playTheme();
+                    // Go to name entry instead of game
+                    p1NameInput = "";
+                    p2NameInput = "";
+                    enteringP1 = true;
+                    state = ENTER_NAMES;
+                    SDL_StartTextInput(window);
+                }
+            }
+
+            if (event.type == SDL_EVENT_TEXT_INPUT && state == ENTER_NAMES)
+            {
+                if (enteringP1)
+                {
+                    if (p1NameInput.length() < 12)
+                        p1NameInput += event.text.text;
+                }
+                else
+                {
+                    if (p2NameInput.length() < 12)
+                        p2NameInput += event.text.text;
                 }
             }
 
             if (event.type == SDL_EVENT_KEY_DOWN)
             {
+                if (state == ENTER_NAMES)
+                {
+                    if (event.key.scancode == SDL_SCANCODE_BACKSPACE)
+                    {
+                        if (enteringP1 && !p1NameInput.empty())
+                            p1NameInput.pop_back();
+                        else if (!enteringP1 && !p2NameInput.empty())
+                            p2NameInput.pop_back();
+                    }
+
+                    if (event.key.scancode == SDL_SCANCODE_RETURN)
+                    {
+                        if (enteringP1)
+                        {
+                            // If empty use default name
+                            if (p1NameInput.empty())
+                                p1NameInput = "Player 1";
+                            enteringP1 = false;
+                        }
+                        else
+                        {
+                            if (p2NameInput.empty())
+                                p2NameInput = "Player 2";
+                            // Set names and start game
+                            p1.name = p1NameInput;
+                            p2.name = p2NameInput;
+                            SDL_StopTextInput(window);
+                            resetGame();
+                            state = SHOW_ROUND;
+                            playTheme();
+                        }
+                    }
+
+                    if (event.key.scancode == SDL_SCANCODE_ESCAPE)
+                    {
+                        SDL_StopTextInput(window);
+                        state = MENU;
+                    }
+                }
+
                 if (state == GAME_OVER && event.key.scancode == SDL_SCANCODE_SPACE)
                 {
                     resetGame();
@@ -328,37 +383,31 @@ int main(int argc, char *argv[])
 
                 if (state == PLAYING)
                 {
-                    // P1 jump
                     if (event.key.scancode == SDL_SCANCODE_W && !p1.jumping)
                     {
                         p1.vy = jumpForce;
                         p1.jumping = true;
                     }
-                    // P2 jump
                     if (event.key.scancode == SDL_SCANCODE_UP && !p2.jumping)
                     {
                         p2.vy = jumpForce;
                         p2.jumping = true;
                     }
-                    // P1 punch
                     if (event.key.scancode == SDL_SCANCODE_F && !p1.attacking && !p1.blocking && !p1.kicking)
                     {
                         p1.attacking = true;
                         p1.attackTimer = 15;
                     }
-                    // P2 punch
                     if (event.key.scancode == SDL_SCANCODE_K && !p2.attacking && !p2.blocking && !p2.kicking)
                     {
                         p2.attacking = true;
                         p2.attackTimer = 15;
                     }
-                    // P1 kick
                     if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking)
                     {
                         p1.kicking = true;
                         p1.kickTimer = 20;
                     }
-                    // P2 kick
                     if (event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking)
                     {
                         p2.kicking = true;
@@ -368,7 +417,6 @@ int main(int argc, char *argv[])
             }
         }
 
-        // Blocking — held keys
         if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
@@ -376,7 +424,6 @@ int main(int argc, char *argv[])
             p2.blocking = keys[SDL_SCANCODE_DOWN];
         }
 
-        // State machine
         if (state == SHOW_ROUND)
         {
             stateTimer -= deltaTime;
@@ -396,7 +443,6 @@ int main(int argc, char *argv[])
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
 
-            // Movement
             if (!p1.blocking)
             {
                 if (keys[SDL_SCANCODE_A])
@@ -412,7 +458,6 @@ int main(int argc, char *argv[])
                     p2.x += 300 * deltaTime;
             }
 
-            // Boundaries
             if (p1.x < 0)
                 p1.x = 0;
             if (p1.x > 750)
@@ -422,11 +467,9 @@ int main(int argc, char *argv[])
             if (p2.x > 750)
                 p2.x = 750;
 
-            // Update both players
             p1.update(deltaTime, gravity, groundY);
             p2.update(deltaTime, gravity, groundY);
 
-            // Round timer
             roundTimer -= deltaTime;
             if (roundTimer <= 0)
             {
@@ -438,13 +481,13 @@ int main(int argc, char *argv[])
 
                 if (p1wins == 2)
                 {
-                    winner = "Player 1 Wins!";
+                    winner = p1.name + " Wins!";
                     state = GAME_OVER;
                     stopTheme();
                 }
                 else if (p2wins == 2)
                 {
-                    winner = "Player 2 Wins!";
+                    winner = p2.name + " Wins!";
                     state = GAME_OVER;
                     stopTheme();
                 }
@@ -456,7 +499,6 @@ int main(int argc, char *argv[])
                 }
             }
 
-            // Hitboxes
             SDL_FRect p1rect = p1.getRect();
             SDL_FRect p2rect = p2.getRect();
             SDL_FRect p1punch = p1.getPunchHitbox(true);
@@ -464,7 +506,6 @@ int main(int argc, char *argv[])
             SDL_FRect p1kick = p1.getKickHitbox(true);
             SDL_FRect p2kick = p2.getKickHitbox(false);
 
-            // P1 punch hits P2
             if (p1.attacking && SDL_HasRectIntersectionFloat(&p1punch, &p2rect))
             {
                 if (p2.blocking)
@@ -479,7 +520,6 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-            // P2 punch hits P1
             if (p2.attacking && SDL_HasRectIntersectionFloat(&p2punch, &p1rect))
             {
                 if (p1.blocking)
@@ -494,7 +534,6 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-            // P1 kick hits P2
             if (p1.kicking && SDL_HasRectIntersectionFloat(&p1kick, &p2rect))
             {
                 if (p2.blocking)
@@ -509,7 +548,6 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-            // P2 kick hits P1
             if (p2.kicking && SDL_HasRectIntersectionFloat(&p2kick, &p1rect))
             {
                 if (p1.blocking)
@@ -525,7 +563,6 @@ int main(int argc, char *argv[])
                 }
             }
 
-            // Check round over
             if (p1.health <= 0 || p2.health <= 0)
             {
                 if (p1.health <= 0)
@@ -535,13 +572,13 @@ int main(int argc, char *argv[])
 
                 if (p1wins == 2)
                 {
-                    winner = "Player 1 Wins!";
+                    winner = p1.name + " Wins!";
                     state = GAME_OVER;
                     stopTheme();
                 }
                 else if (p2wins == 2)
                 {
-                    winner = "Player 2 Wins!";
+                    winner = p2.name + " Wins!";
                     state = GAME_OVER;
                     stopTheme();
                 }
@@ -559,14 +596,11 @@ int main(int argc, char *argv[])
             if (stateTimer <= 0)
             {
                 resetRound();
-                currentRound;
                 state = SHOW_ROUND;
             }
         }
 
-        // ========================
         // DRAW
-        // ========================
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
@@ -575,6 +609,7 @@ int main(int argc, char *argv[])
         SDL_Color red = {255, 0, 0, 255};
         SDL_Color black = {0, 0, 0, 255};
         SDL_Color yellow = {255, 215, 0, 255};
+        SDL_Color gray = {180, 180, 180, 255};
 
         if (state == MENU)
         {
@@ -582,25 +617,43 @@ int main(int argc, char *argv[])
             drawButton(btn2P, "2 Player", hover2P);
             drawButton(btnVSComp, "VS Computer", hoverVSComp);
         }
+        else if (state == ENTER_NAMES)
+        {
+            drawTextCentered(fontBig, "KING OF GOON", gold, 80);
+
+            if (enteringP1)
+            {
+                drawTextCentered(fontMed, "Enter Player 1 Name:", white, 230);
+                std::string display = p1NameInput + "|";
+                drawTextCentered(fontBig, display.c_str(), gold, 310);
+                drawTextCentered(fontSmall, "Press ENTER to confirm", gray, 430);
+            }
+            else
+            {
+                drawTextCentered(fontSmall, ("P1: " + p1NameInput).c_str(), gold, 200);
+                drawTextCentered(fontMed, "Enter Player 2 Name:", white, 260);
+                std::string display = p2NameInput + "|";
+                drawTextCentered(fontBig, display.c_str(), gold, 310);
+                drawTextCentered(fontSmall, "Press ENTER to confirm", gray, 430);
+            }
+
+            drawTextCentered(fontSmall, "Press ESC to go back", gray, 470);
+        }
         else
         {
-            // Background
             SDL_FRect bgRect = {0, 0, 800, 600};
             SDL_RenderTexture(renderer, background, NULL, &bgRect);
 
-            // Ground
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
             SDL_FRect ground = {0, 500, 800, 10};
             SDL_RenderFillRect(renderer, &ground);
 
-            // Health bar backgrounds
             SDL_FRect p1healthBG = {50, 50, 200, 20};
             SDL_FRect p2healthBG = {550, 50, 200, 20};
             SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
             SDL_RenderFillRect(renderer, &p1healthBG);
             SDL_RenderFillRect(renderer, &p2healthBG);
 
-            // Health bars
             SDL_FRect p1healthBar = {50, 50, (p1.health / 100.0f) * 200, 20};
             SDL_FRect p2healthBar = {550, 50, (p2.health / 100.0f) * 200, 20};
             SDL_SetRenderDrawColor(renderer, p1.health < 30 ? 255 : 0, p1.health >= 30 ? 255 : 0, 0, 255);
@@ -608,11 +661,10 @@ int main(int argc, char *argv[])
             SDL_SetRenderDrawColor(renderer, p2.health < 30 ? 255 : 0, p2.health >= 30 ? 255 : 0, 0, 255);
             SDL_RenderFillRect(renderer, &p2healthBar);
 
-            // Player names
+            // Player names above health bars
             drawText(fontSmall, p1.name.c_str(), white, 50, 5);
             drawText(fontSmall, p2.name.c_str(), white, 550, 5);
 
-            // Round wins dots
             for (int i = 0; i < p1wins; i++)
             {
                 SDL_FRect dot = {50.0f + i * 20, 75, 15, 15};
@@ -626,16 +678,13 @@ int main(int argc, char *argv[])
                 SDL_RenderFillRect(renderer, &dot);
             }
 
-            // Timer
             int timerSeconds = (int)roundTimer;
             SDL_Color timerColor = timerSeconds <= 10 ? red : white;
             drawTextCentered(fontTimer, std::to_string(timerSeconds).c_str(), timerColor, 40);
 
-            // Draw players
             p1.draw(renderer);
             p2.draw(renderer);
 
-            // State overlays
             if (state == SHOW_ROUND)
             {
                 std::string roundText = "Round " + std::to_string(currentRound);
