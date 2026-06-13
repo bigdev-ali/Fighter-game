@@ -208,6 +208,15 @@ int main(int argc, char *argv[])
     float stateTimer = 1.5f;
     float roundTimer = 60.0f;
 
+    // Screen flash
+    float flashTimer = 0.0f;
+    float flashMaxTime = 0.5f;
+
+    // Slow motion
+    float slowTimer = 0.0f;
+    float slowMaxTime = 1.0f;
+    bool slowActive = false;
+
     // Name input
     std::string p1NameInput = "";
     std::string p2NameInput = "";
@@ -272,6 +281,9 @@ int main(int argc, char *argv[])
         winner = "";
         stateTimer = 1.5f;
         roundTimer = 60.0f;
+        flashTimer = 0.0f;
+        slowTimer = 0.0f;
+        slowActive = false;
     };
 
     auto resetRound = [&]()
@@ -280,6 +292,16 @@ int main(int argc, char *argv[])
         p2.reset(650);
         stateTimer = 1.5f;
         roundTimer = 60.0f;
+        flashTimer = 0.0f;
+        slowTimer = 0.0f;
+        slowActive = false;
+    };
+
+    auto triggerKOEffects = [&]()
+    {
+        flashTimer = flashMaxTime;
+        slowTimer = slowMaxTime;
+        slowActive = true;
     };
 
     Uint64 lastTime = SDL_GetTicks();
@@ -289,8 +311,26 @@ int main(int argc, char *argv[])
     while (running)
     {
         Uint64 currentTime = SDL_GetTicks();
-        float deltaTime = (currentTime - lastTime) / 1000.0f;
+        float rawDeltaTime = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
+
+        // Apply slow motion
+        float deltaTime = slowActive ? rawDeltaTime * 0.2f : rawDeltaTime;
+
+        // Count down slow motion using real time
+        if (slowActive)
+        {
+            slowTimer -= rawDeltaTime;
+            if (slowTimer <= 0)
+            {
+                slowTimer = 0;
+                slowActive = false;
+            }
+        }
+
+        // Count down flash using real time
+        if (flashTimer > 0)
+            flashTimer -= rawDeltaTime;
 
         float mouseX, mouseY;
         SDL_GetMouseState(&mouseX, &mouseY);
@@ -309,7 +349,6 @@ int main(int argc, char *argv[])
             {
                 if (state == MENU && hover2P)
                 {
-                    // Go to name entry instead of game
                     p1NameInput = "";
                     p2NameInput = "";
                     enteringP1 = true;
@@ -343,12 +382,10 @@ int main(int argc, char *argv[])
                         else if (!enteringP1 && !p2NameInput.empty())
                             p2NameInput.pop_back();
                     }
-
                     if (event.key.scancode == SDL_SCANCODE_RETURN)
                     {
                         if (enteringP1)
                         {
-                            // If empty use default name
                             if (p1NameInput.empty())
                                 p1NameInput = "Player 1";
                             enteringP1 = false;
@@ -357,7 +394,6 @@ int main(int argc, char *argv[])
                         {
                             if (p2NameInput.empty())
                                 p2NameInput = "Player 2";
-                            // Set names and start game
                             p1.name = p1NameInput;
                             p2.name = p2NameInput;
                             SDL_StopTextInput(window);
@@ -366,7 +402,6 @@ int main(int argc, char *argv[])
                             playTheme();
                         }
                     }
-
                     if (event.key.scancode == SDL_SCANCODE_ESCAPE)
                     {
                         SDL_StopTextInput(window);
@@ -565,28 +600,32 @@ int main(int argc, char *argv[])
 
             if (p1.health <= 0 || p2.health <= 0)
             {
-                if (p1.health <= 0)
-                    p2wins++;
-                if (p2.health <= 0)
-                    p1wins++;
+                if (!slowActive)
+                {
+                    triggerKOEffects();
+                    if (p1.health <= 0)
+                        p2wins++;
+                    if (p2.health <= 0)
+                        p1wins++;
 
-                if (p1wins == 2)
-                {
-                    winner = p1.name + " Wins!";
-                    state = GAME_OVER;
-                    stopTheme();
-                }
-                else if (p2wins == 2)
-                {
-                    winner = p2.name + " Wins!";
-                    state = GAME_OVER;
-                    stopTheme();
-                }
-                else
-                {
-                    currentRound++;
-                    state = ROUND_OVER;
-                    stateTimer = 2.0f;
+                    if (p1wins == 2)
+                    {
+                        winner = p1.name + " Wins!";
+                        state = GAME_OVER;
+                        stopTheme();
+                    }
+                    else if (p2wins == 2)
+                    {
+                        winner = p2.name + " Wins!";
+                        state = GAME_OVER;
+                        stopTheme();
+                    }
+                    else
+                    {
+                        currentRound++;
+                        state = ROUND_OVER;
+                        stateTimer = 2.0f;
+                    }
                 }
             }
         }
@@ -636,7 +675,6 @@ int main(int argc, char *argv[])
                 drawTextCentered(fontBig, display.c_str(), gold, 310);
                 drawTextCentered(fontSmall, "Press ENTER to confirm", gray, 430);
             }
-
             drawTextCentered(fontSmall, "Press ESC to go back", gray, 470);
         }
         else
@@ -661,7 +699,6 @@ int main(int argc, char *argv[])
             SDL_SetRenderDrawColor(renderer, p2.health < 30 ? 255 : 0, p2.health >= 30 ? 255 : 0, 0, 255);
             SDL_RenderFillRect(renderer, &p2healthBar);
 
-            // Player names above health bars
             drawText(fontSmall, p1.name.c_str(), white, 50, 5);
             drawText(fontSmall, p2.name.c_str(), white, 550, 5);
 
@@ -684,6 +721,17 @@ int main(int argc, char *argv[])
 
             p1.draw(renderer);
             p2.draw(renderer);
+
+            // Screen flash overlay
+            if (flashTimer > 0)
+            {
+                Uint8 alpha = (Uint8)((flashTimer / flashMaxTime) * 200);
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, alpha);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                SDL_FRect flashRect = {0, 0, 800, 600};
+                SDL_RenderFillRect(renderer, &flashRect);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+            }
 
             if (state == SHOW_ROUND)
             {
