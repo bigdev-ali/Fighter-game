@@ -21,7 +21,7 @@ struct Player
     float vy;
     float health;
     bool jumping;
-    bool attacking, kicking, blocking;
+    bool attacking, kicking, blocking, taunting;
     int attackTimer, kickTimer;
     int flicker;
     SDL_Texture *sprite;
@@ -39,6 +39,7 @@ struct Player
         attacking = false;
         kicking = false;
         blocking = false;
+        taunting = false;
         attackTimer = 0;
         kickTimer = 0;
         flicker = 0;
@@ -54,6 +55,7 @@ struct Player
         attacking = false;
         kicking = false;
         blocking = false;
+        taunting = false;
         attackTimer = 0;
         kickTimer = 0;
         flicker = 0;
@@ -83,17 +85,29 @@ struct Player
         }
         if (flicker > 0)
             flicker--;
+
+        // Heal while taunting
+        if (taunting && health < 100)
+        {
+            health += 0.2f * deltaTime;
+            if (health > 100)
+                health = 100;
+        }
     }
 
     void draw(SDL_Renderer *renderer)
     {
         SDL_FRect rect = {x, y, 80, 100};
-        if (blocking)
+
+        if (taunting)
+            SDL_SetTextureColorMod(sprite, 255, 215, 0);
+        else if (blocking)
             SDL_SetTextureColorMod(sprite, 50, 50, 255);
         else if (flicker > 0 && flicker % 2 == 0)
             SDL_SetTextureColorMod(sprite, 255, 50, 50);
         else
             SDL_SetTextureColorMod(sprite, 255, 255, 255);
+
         SDL_RenderTexture(renderer, sprite, NULL, &rect);
     }
 
@@ -103,6 +117,7 @@ struct Player
         if (health < 0)
             health = 0;
         flicker = 10;
+        taunting = false; // cancel taunt on hit
     }
 
     SDL_FRect getRect() { return {x, y, 80, 100}; }
@@ -208,16 +223,12 @@ int main(int argc, char *argv[])
     float stateTimer = 1.5f;
     float roundTimer = 60.0f;
 
-    // Screen flash
     float flashTimer = 0.0f;
     float flashMaxTime = 0.5f;
-
-    // Slow motion
     float slowTimer = 0.0f;
     float slowMaxTime = 1.0f;
     bool slowActive = false;
 
-    // Name input
     std::string p1NameInput = "";
     std::string p2NameInput = "";
     bool enteringP1 = true;
@@ -314,10 +325,8 @@ int main(int argc, char *argv[])
         float rawDeltaTime = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
-        // Apply slow motion
         float deltaTime = slowActive ? rawDeltaTime * 0.2f : rawDeltaTime;
 
-        // Count down slow motion using real time
         if (slowActive)
         {
             slowTimer -= rawDeltaTime;
@@ -328,7 +337,6 @@ int main(int argc, char *argv[])
             }
         }
 
-        // Count down flash using real time
         if (flashTimer > 0)
             flashTimer -= rawDeltaTime;
 
@@ -418,32 +426,32 @@ int main(int argc, char *argv[])
 
                 if (state == PLAYING)
                 {
-                    if (event.key.scancode == SDL_SCANCODE_W && !p1.jumping)
+                    if (event.key.scancode == SDL_SCANCODE_W && !p1.jumping && !p1.taunting)
                     {
                         p1.vy = jumpForce;
                         p1.jumping = true;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_UP && !p2.jumping)
+                    if (event.key.scancode == SDL_SCANCODE_UP && !p2.jumping && !p2.taunting)
                     {
                         p2.vy = jumpForce;
                         p2.jumping = true;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_F && !p1.attacking && !p1.blocking && !p1.kicking)
+                    if (event.key.scancode == SDL_SCANCODE_F && !p1.attacking && !p1.blocking && !p1.kicking && !p1.taunting)
                     {
                         p1.attacking = true;
                         p1.attackTimer = 15;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_K && !p2.attacking && !p2.blocking && !p2.kicking)
+                    if (event.key.scancode == SDL_SCANCODE_K && !p2.attacking && !p2.blocking && !p2.kicking && !p2.taunting)
                     {
                         p2.attacking = true;
                         p2.attackTimer = 15;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking)
+                    if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking && !p1.taunting)
                     {
                         p1.kicking = true;
                         p1.kickTimer = 20;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking)
+                    if (event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking && !p2.taunting)
                     {
                         p2.kicking = true;
                         p2.kickTimer = 20;
@@ -455,8 +463,14 @@ int main(int argc, char *argv[])
         if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
-            p1.blocking = keys[SDL_SCANCODE_S];
-            p2.blocking = keys[SDL_SCANCODE_DOWN];
+
+            // Blocking
+            p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting;
+            p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting;
+
+            // Taunting — held keys
+            p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking;
+            p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking;
         }
 
         if (state == SHOW_ROUND)
@@ -478,14 +492,15 @@ int main(int argc, char *argv[])
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
 
-            if (!p1.blocking)
+            // Can't move while taunting or blocking
+            if (!p1.blocking && !p1.taunting)
             {
                 if (keys[SDL_SCANCODE_A])
                     p1.x -= 300 * deltaTime;
                 if (keys[SDL_SCANCODE_D])
                     p1.x += 300 * deltaTime;
             }
-            if (!p2.blocking)
+            if (!p2.blocking && !p2.taunting)
             {
                 if (keys[SDL_SCANCODE_LEFT])
                     p2.x -= 300 * deltaTime;
@@ -722,7 +737,7 @@ int main(int argc, char *argv[])
             p1.draw(renderer);
             p2.draw(renderer);
 
-            // Screen flash overlay
+            // Screen flash
             if (flashTimer > 0)
             {
                 Uint8 alpha = (Uint8)((flashTimer / flashMaxTime) * 200);
