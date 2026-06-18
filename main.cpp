@@ -11,6 +11,7 @@ enum GameState
     SHOW_ROUND,
     SHOW_FIGHT,
     PLAYING,
+    PAUSED,
     ROUND_OVER,
     GAME_OVER
 };
@@ -86,7 +87,6 @@ struct Player
         if (flicker > 0)
             flicker--;
 
-        // Heal while taunting
         if (taunting && health < 100)
         {
             health += 0.2f * deltaTime;
@@ -117,7 +117,7 @@ struct Player
         if (health < 0)
             health = 0;
         flicker = 10;
-        taunting = false; // cancel taunt on hit
+        taunting = false;
     }
 
     SDL_FRect getRect() { return {x, y, 80, 100}; }
@@ -417,6 +417,22 @@ int main(int argc, char *argv[])
                     }
                 }
 
+                // Pause toggle
+                if (state == PLAYING && event.key.scancode == SDL_SCANCODE_ESCAPE)
+                {
+                    state = PAUSED;
+                }
+                else if (state == PAUSED && event.key.scancode == SDL_SCANCODE_ESCAPE)
+                {
+                    state = PLAYING;
+                }
+                else if (state == PAUSED && event.key.scancode == SDL_SCANCODE_M)
+                {
+                    resetGame();
+                    state = MENU;
+                    stopTheme();
+                }
+
                 if (state == GAME_OVER && event.key.scancode == SDL_SCANCODE_SPACE)
                 {
                     resetGame();
@@ -463,12 +479,8 @@ int main(int argc, char *argv[])
         if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
-
-            // Blocking
             p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting;
             p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting;
-
-            // Taunting — held keys
             p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking;
             p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking;
         }
@@ -488,11 +500,14 @@ int main(int argc, char *argv[])
             if (stateTimer <= 0)
                 state = PLAYING;
         }
+        else if (state == PAUSED)
+        {
+            // Frozen — nothing updates
+        }
         else if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
 
-            // Can't move while taunting or blocking
             if (!p1.blocking && !p1.taunting)
             {
                 if (keys[SDL_SCANCODE_A])
@@ -737,7 +752,6 @@ int main(int argc, char *argv[])
             p1.draw(renderer);
             p2.draw(renderer);
 
-            // Screen flash
             if (flashTimer > 0)
             {
                 Uint8 alpha = (Uint8)((flashTimer / flashMaxTime) * 200);
@@ -765,6 +779,18 @@ int main(int argc, char *argv[])
             {
                 drawTextCentered(fontBig, winner.c_str(), white, (600 - 80) / 2 - 60);
                 drawTextCentered(fontMed, "Press SPACE to go to menu", white, (600 - 48) / 2 + 60);
+            }
+            else if (state == PAUSED)
+            {
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 150);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                SDL_FRect overlay = {0, 0, 800, 600};
+                SDL_RenderFillRect(renderer, &overlay);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+                drawTextCentered(fontBig, "PAUSED", white, 220);
+                drawTextCentered(fontMed, "Press ESC to resume", white, 320);
+                drawTextCentered(fontMed, "Press M for menu", white, 380);
             }
         }
 
