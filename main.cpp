@@ -7,6 +7,7 @@
 enum GameState
 {
     MENU,
+    CONTROLS,
     ENTER_NAMES,
     SHOW_ROUND,
     SHOW_FIGHT,
@@ -71,10 +72,7 @@ struct Player
 
     void update(float deltaTime, float gravity, float groundY)
     {
-        // Apply horizontal velocity from throw
         x += vx * deltaTime;
-
-        // Slow down horizontal velocity over time
         if (vx > 0)
         {
             vx -= 800 * deltaTime;
@@ -128,7 +126,6 @@ struct Player
     void draw(SDL_Renderer *renderer)
     {
         SDL_FRect rect = {x, y, 80, 100};
-
         if (taunting)
             SDL_SetTextureColorMod(sprite, 255, 215, 0);
         else if (blocking)
@@ -137,7 +134,6 @@ struct Player
             SDL_SetTextureColorMod(sprite, 255, 50, 50);
         else
             SDL_SetTextureColorMod(sprite, 255, 255, 255);
-
         SDL_RenderTexture(renderer, sprite, NULL, &rect);
     }
 
@@ -160,7 +156,6 @@ struct Player
     }
 
     SDL_FRect getRect() { return {x, y, 80, 100}; }
-
     SDL_FRect getPunchHitbox(bool facingRight)
     {
         if (facingRight)
@@ -168,7 +163,6 @@ struct Player
         else
             return {x - 80, y + 20, 60, 30};
     }
-
     SDL_FRect getKickHitbox(bool facingRight)
     {
         if (facingRight)
@@ -176,7 +170,6 @@ struct Player
         else
             return {x - 80, y + 60, 80, 30};
     }
-
     SDL_FRect getGrabHitbox(bool facingRight)
     {
         if (facingRight)
@@ -438,6 +431,12 @@ int main(int argc, char *argv[])
 
             if (event.type == SDL_EVENT_KEY_DOWN)
             {
+                // Controls screen
+                if (state == MENU && event.key.scancode == SDL_SCANCODE_C)
+                    state = CONTROLS;
+                if (state == CONTROLS && event.key.scancode == SDL_SCANCODE_ESCAPE)
+                    state = MENU;
+
                 if (state == ENTER_NAMES)
                 {
                     if (event.key.scancode == SDL_SCANCODE_BACKSPACE)
@@ -524,7 +523,6 @@ int main(int argc, char *argv[])
                         p2.kicking = true;
                         p2.kickTimer = 20;
                     }
-                    // Grab
                     if (event.key.scancode == SDL_SCANCODE_H && !p1.grabbing && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting)
                     {
                         p1.grabbing = true;
@@ -597,7 +595,6 @@ int main(int argc, char *argv[])
             p1.update(deltaTime, gravity, groundY);
             p2.update(deltaTime, gravity, groundY);
 
-            // Clamp after throw
             if (p1.x < 0)
                 p1.x = 0;
             if (p1.x > 750)
@@ -645,7 +642,6 @@ int main(int argc, char *argv[])
             SDL_FRect p1grab = p1.getGrabHitbox(true);
             SDL_FRect p2grab = p2.getGrabHitbox(false);
 
-            // Punch
             if (p1.attacking && SDL_HasRectIntersectionFloat(&p1punch, &p2rect))
             {
                 if (p2.blocking)
@@ -674,8 +670,6 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-
-            // Kick
             if (p1.kicking && SDL_HasRectIntersectionFloat(&p1kick, &p2rect))
             {
                 if (p2.blocking)
@@ -704,13 +698,10 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-
-            // Grab
             if (p1.grabbing && SDL_HasRectIntersectionFloat(&p1grab, &p2rect))
             {
                 if (p2.blocking)
                 {
-                    // Grab blocked — nothing happens
                     p1.grabbing = false;
                 }
                 else
@@ -795,6 +786,38 @@ int main(int argc, char *argv[])
             drawTextCentered(fontTitle, "KING OF GOON", gold, 100);
             drawButton(btn2P, "2 Player", hover2P);
             drawButton(btnVSComp, "VS Computer", hoverVSComp);
+            drawTextCentered(fontSmall, "Press C for controls", gray, 480);
+        }
+        else if (state == CONTROLS)
+        {
+            drawTextCentered(fontBig, "CONTROLS", gold, 30);
+
+            // Divider line
+            SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
+            SDL_RenderLine(renderer, 400, 120, 400, 560);
+
+            // Player 1 column
+            drawText(fontMed, "Player 1", white, 80, 120);
+            drawText(fontSmall, "Move       A / D", gray, 60, 185);
+            drawText(fontSmall, "Jump       W", gray, 60, 225);
+            drawText(fontSmall, "Punch      F", gray, 60, 265);
+            drawText(fontSmall, "Kick       G", gray, 60, 305);
+            drawText(fontSmall, "Block      S", gray, 60, 345);
+            drawText(fontSmall, "Taunt      T", gray, 60, 385);
+            drawText(fontSmall, "Grab       H", gray, 60, 425);
+            drawText(fontSmall, "Pause      ESC", gray, 60, 465);
+
+            // Player 2 column
+            drawText(fontMed, "Player 2", white, 480, 120);
+            drawText(fontSmall, "Move       LEFT / RIGHT", gray, 430, 185);
+            drawText(fontSmall, "Jump       UP", gray, 430, 225);
+            drawText(fontSmall, "Punch      K", gray, 430, 265);
+            drawText(fontSmall, "Kick       L", gray, 430, 305);
+            drawText(fontSmall, "Block      DOWN", gray, 430, 345);
+            drawText(fontSmall, "Taunt      P", gray, 430, 385);
+            drawText(fontSmall, "Grab       O", gray, 430, 425);
+
+            drawTextCentered(fontSmall, "Press ESC to go back", gray, 540);
         }
         else if (state == ENTER_NAMES)
         {
@@ -862,7 +885,6 @@ int main(int argc, char *argv[])
             p1.draw(renderer);
             p2.draw(renderer);
 
-            // Screen flash — white for KO, red for grab
             if (flashTimer > 0)
             {
                 Uint8 alpha = (Uint8)((flashTimer / flashMaxTime) * 200);
