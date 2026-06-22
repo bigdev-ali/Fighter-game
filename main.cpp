@@ -27,6 +27,7 @@ struct Player
     bool attacking, kicking, blocking, taunting, grabbing;
     int attackTimer, kickTimer, grabTimer;
     int flicker;
+    bool hasDoubleJumped;
     SDL_Texture *sprite;
     std::string name;
 
@@ -49,6 +50,7 @@ struct Player
         kickTimer = 0;
         grabTimer = 0;
         flicker = 0;
+        bool hasDoubleJumped = false;
     }
 
     void reset(float startX)
@@ -93,6 +95,7 @@ struct Player
             y = groundY;
             vy = 0;
             jumping = false;
+            hasDoubleJumped = false;
         }
         if (attacking)
         {
@@ -497,11 +500,22 @@ int main(int argc, char *argv[])
                     {
                         p1.vy = jumpForce;
                         p1.jumping = true;
+                    } // Single jump
+                    // Double jump
+                    else if (event.key.scancode == SDL_SCANCODE_W && p1.jumping && !p1.hasDoubleJumped && !p1.taunting)
+                    {
+                        p1.vy = jumpForce;
+                        p1.hasDoubleJumped = true;
                     }
                     if (event.key.scancode == SDL_SCANCODE_UP && !p2.jumping && !p2.taunting)
                     {
                         p2.vy = jumpForce;
                         p2.jumping = true;
+                    }
+                    else if (event.key.scancode == SDL_SCANCODE_UP && p2.jumping && !p2.hasDoubleJumped && !p2.taunting)
+                    {
+                        p2.vy = jumpForce;
+                        p2.hasDoubleJumped = true;
                     }
                     if (event.key.scancode == SDL_SCANCODE_F && !p1.attacking && !p1.blocking && !p1.kicking && !p1.taunting && !p1.grabbing)
                     {
