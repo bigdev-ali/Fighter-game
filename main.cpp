@@ -23,11 +23,14 @@ struct Player
     float vy;
     float vx;
     float health;
+    float displayHealth;
     bool jumping;
-    bool attacking, kicking, blocking, taunting, grabbing;
-    int attackTimer, kickTimer, grabTimer;
-    int flicker;
     bool hasDoubleJumped;
+    bool attacking, kicking, blocking, taunting, grabbing;
+    bool airAttacking;
+    int attackTimer, kickTimer, grabTimer;
+    int airAttackTimer;
+    int flicker;
     SDL_Texture *sprite;
     std::string name;
 
@@ -40,17 +43,20 @@ struct Player
         vy = 0;
         vx = 0;
         health = 100;
+        displayHealth = 100;
         jumping = false;
+        hasDoubleJumped = false;
         attacking = false;
         kicking = false;
         blocking = false;
         taunting = false;
         grabbing = false;
+        airAttacking = false;
         attackTimer = 0;
         kickTimer = 0;
         grabTimer = 0;
+        airAttackTimer = 0;
         flicker = 0;
-        bool hasDoubleJumped = false;
     }
 
     void reset(float startX)
@@ -60,15 +66,19 @@ struct Player
         vy = 0;
         vx = 0;
         health = 100;
+        displayHealth = 100;
         jumping = false;
+        hasDoubleJumped = false;
         attacking = false;
         kicking = false;
         blocking = false;
         taunting = false;
         grabbing = false;
+        airAttacking = false;
         attackTimer = 0;
         kickTimer = 0;
         grabTimer = 0;
+        airAttackTimer = 0;
         flicker = 0;
     }
 
@@ -96,7 +106,9 @@ struct Player
             vy = 0;
             jumping = false;
             hasDoubleJumped = false;
+            airAttacking = false;
         }
+
         if (attacking)
         {
             attackTimer--;
@@ -115,6 +127,12 @@ struct Player
             if (grabTimer <= 0)
                 grabbing = false;
         }
+        if (airAttacking)
+        {
+            airAttackTimer--;
+            if (airAttackTimer <= 0)
+                airAttacking = false;
+        }
         if (flicker > 0)
             flicker--;
 
@@ -123,6 +141,14 @@ struct Player
             health += 0.2f * deltaTime;
             if (health > 100)
                 health = 100;
+        }
+
+        // Smooth health bar — display health slides toward real health
+        if (displayHealth > health)
+        {
+            displayHealth -= 15.0f * deltaTime;
+            if (displayHealth < health)
+                displayHealth = health;
         }
     }
 
@@ -159,6 +185,7 @@ struct Player
     }
 
     SDL_FRect getRect() { return {x, y, 80, 100}; }
+
     SDL_FRect getPunchHitbox(bool facingRight)
     {
         if (facingRight)
@@ -166,6 +193,7 @@ struct Player
         else
             return {x - 80, y + 20, 60, 30};
     }
+
     SDL_FRect getKickHitbox(bool facingRight)
     {
         if (facingRight)
@@ -173,12 +201,21 @@ struct Player
         else
             return {x - 80, y + 60, 80, 30};
     }
+
     SDL_FRect getGrabHitbox(bool facingRight)
     {
         if (facingRight)
             return {x + 80, y + 10, 50, 80};
         else
             return {x - 50, y + 10, 50, 80};
+    }
+
+    SDL_FRect getAirAttackHitbox(bool facingRight)
+    {
+        if (facingRight)
+            return {x + 60, y + 80, 80, 40};
+        else
+            return {x - 80, y + 80, 80, 40};
     }
 };
 
@@ -434,7 +471,6 @@ int main(int argc, char *argv[])
 
             if (event.type == SDL_EVENT_KEY_DOWN)
             {
-                // Controls screen
                 if (state == MENU && event.key.scancode == SDL_SCANCODE_C)
                     state = CONTROLS;
                 if (state == CONTROLS && event.key.scancode == SDL_SCANCODE_ESCAPE)
@@ -496,53 +532,78 @@ int main(int argc, char *argv[])
 
                 if (state == PLAYING)
                 {
-                    if (event.key.scancode == SDL_SCANCODE_W && !p1.jumping && !p1.taunting)
+                    // P1 jump and double jump
+                    if (event.key.scancode == SDL_SCANCODE_W && !p1.taunting)
                     {
-                        p1.vy = jumpForce;
-                        p1.jumping = true;
-                    } // Single jump
-                    // Double jump
-                    else if (event.key.scancode == SDL_SCANCODE_W && p1.jumping && !p1.hasDoubleJumped && !p1.taunting)
-                    {
-                        p1.vy = jumpForce;
-                        p1.hasDoubleJumped = true;
+                        if (!p1.jumping)
+                        {
+                            p1.vy = jumpForce;
+                            p1.jumping = true;
+                        }
+                        else if (!p1.hasDoubleJumped)
+                        {
+                            p1.vy = jumpForce;
+                            p1.hasDoubleJumped = true;
+                        }
                     }
-                    if (event.key.scancode == SDL_SCANCODE_UP && !p2.jumping && !p2.taunting)
+                    // P2 jump and double jump
+                    if (event.key.scancode == SDL_SCANCODE_UP && !p2.taunting)
                     {
-                        p2.vy = jumpForce;
-                        p2.jumping = true;
+                        if (!p2.jumping)
+                        {
+                            p2.vy = jumpForce;
+                            p2.jumping = true;
+                        }
+                        else if (!p2.hasDoubleJumped)
+                        {
+                            p2.vy = jumpForce;
+                            p2.hasDoubleJumped = true;
+                        }
                     }
-                    else if (event.key.scancode == SDL_SCANCODE_UP && p2.jumping && !p2.hasDoubleJumped && !p2.taunting)
+                    // P1 punch — ground or air
+                    if (event.key.scancode == SDL_SCANCODE_F && !p1.blocking && !p1.taunting && !p1.grabbing)
                     {
-                        p2.vy = jumpForce;
-                        p2.hasDoubleJumped = true;
+                        if (!p1.jumping && !p1.attacking && !p1.kicking)
+                        {
+                            p1.attacking = true;
+                            p1.attackTimer = 15;
+                        }
+                        else if (p1.jumping && !p1.airAttacking)
+                        {
+                            p1.airAttacking = true;
+                            p1.airAttackTimer = 15;
+                        }
                     }
-                    if (event.key.scancode == SDL_SCANCODE_F && !p1.attacking && !p1.blocking && !p1.kicking && !p1.taunting && !p1.grabbing)
+                    // P2 punch — ground or air
+                    if (event.key.scancode == SDL_SCANCODE_K && !p2.blocking && !p2.taunting && !p2.grabbing)
                     {
-                        p1.attacking = true;
-                        p1.attackTimer = 15;
+                        if (!p2.jumping && !p2.attacking && !p2.kicking)
+                        {
+                            p2.attacking = true;
+                            p2.attackTimer = 15;
+                        }
+                        else if (p2.jumping && !p2.airAttacking)
+                        {
+                            p2.airAttacking = true;
+                            p2.airAttackTimer = 15;
+                        }
                     }
-                    if (event.key.scancode == SDL_SCANCODE_K && !p2.attacking && !p2.blocking && !p2.kicking && !p2.taunting && !p2.grabbing)
-                    {
-                        p2.attacking = true;
-                        p2.attackTimer = 15;
-                    }
-                    if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking && !p1.taunting && !p1.grabbing)
+                    if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking && !p1.taunting && !p1.grabbing && !p1.jumping)
                     {
                         p1.kicking = true;
                         p1.kickTimer = 20;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking && !p2.taunting && !p2.grabbing)
+                    if (event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking && !p2.taunting && !p2.grabbing && !p2.jumping)
                     {
                         p2.kicking = true;
                         p2.kickTimer = 20;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_H && !p1.grabbing && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting)
+                    if (event.key.scancode == SDL_SCANCODE_H && !p1.grabbing && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting && !p1.jumping)
                     {
                         p1.grabbing = true;
                         p1.grabTimer = 10;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_O && !p2.grabbing && !p2.attacking && !p2.kicking && !p2.blocking && !p2.taunting)
+                    if (event.key.scancode == SDL_SCANCODE_O && !p2.grabbing && !p2.attacking && !p2.kicking && !p2.blocking && !p2.taunting && !p2.jumping)
                     {
                         p2.grabbing = true;
                         p2.grabTimer = 10;
@@ -554,10 +615,10 @@ int main(int argc, char *argv[])
         if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
-            p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting;
-            p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting;
-            p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.grabbing;
-            p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking && !p2.grabbing;
+            p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting && !p1.jumping;
+            p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting && !p2.jumping;
+            p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.grabbing && !p1.jumping;
+            p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking && !p2.grabbing && !p2.jumping;
         }
 
         if (state == SHOW_ROUND)
@@ -655,7 +716,10 @@ int main(int argc, char *argv[])
             SDL_FRect p2kick = p2.getKickHitbox(false);
             SDL_FRect p1grab = p1.getGrabHitbox(true);
             SDL_FRect p2grab = p2.getGrabHitbox(false);
+            SDL_FRect p1air = p1.getAirAttackHitbox(true);
+            SDL_FRect p2air = p2.getAirAttackHitbox(false);
 
+            // Ground punch
             if (p1.attacking && SDL_HasRectIntersectionFloat(&p1punch, &p2rect))
             {
                 if (p2.blocking)
@@ -684,6 +748,7 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
+            // Kick
             if (p1.kicking && SDL_HasRectIntersectionFloat(&p1kick, &p2rect))
             {
                 if (p2.blocking)
@@ -712,6 +777,7 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
+            // Grab
             if (p1.grabbing && SDL_HasRectIntersectionFloat(&p1grab, &p2rect))
             {
                 if (p2.blocking)
@@ -739,6 +805,35 @@ int main(int argc, char *argv[])
                     p1.getThrown(false);
                     p2.grabbing = false;
                     triggerGrabFlash();
+                    playHit();
+                }
+            }
+            // Air attack
+            if (p1.airAttacking && SDL_HasRectIntersectionFloat(&p1air, &p2rect))
+            {
+                if (p2.blocking)
+                {
+                    p2.health -= 0.1f;
+                    if (p2.health < 0)
+                        p2.health = 0;
+                }
+                else
+                {
+                    p2.takeDamage(0.5f);
+                    playHit();
+                }
+            }
+            if (p2.airAttacking && SDL_HasRectIntersectionFloat(&p2air, &p1rect))
+            {
+                if (p1.blocking)
+                {
+                    p1.health -= 0.1f;
+                    if (p1.health < 0)
+                        p1.health = 0;
+                }
+                else
+                {
+                    p1.takeDamage(0.5f);
                     playHit();
                 }
             }
@@ -805,38 +900,36 @@ int main(int argc, char *argv[])
         else if (state == CONTROLS)
         {
             drawTextCentered(fontBig, "CONTROLS", gold, 30);
-
-            // Divider line
             SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
             SDL_RenderLine(renderer, 400, 120, 400, 560);
 
-            // Player 1 column
             drawText(fontMed, "Player 1", white, 80, 120);
-            drawText(fontSmall, "Move       A / D", gray, 60, 185);
-            drawText(fontSmall, "Jump       W", gray, 60, 225);
-            drawText(fontSmall, "Punch      F", gray, 60, 265);
-            drawText(fontSmall, "Kick       G", gray, 60, 305);
-            drawText(fontSmall, "Block      S", gray, 60, 345);
-            drawText(fontSmall, "Taunt      T", gray, 60, 385);
-            drawText(fontSmall, "Grab       H", gray, 60, 425);
-            drawText(fontSmall, "Pause      ESC", gray, 60, 465);
+            drawText(fontSmall, "Move         A / D", gray, 60, 185);
+            drawText(fontSmall, "Jump         W", gray, 60, 225);
+            drawText(fontSmall, "Double Jump  W (air)", gray, 60, 265);
+            drawText(fontSmall, "Punch        F", gray, 60, 305);
+            drawText(fontSmall, "Air Attack   F (air)", gray, 60, 345);
+            drawText(fontSmall, "Kick         G", gray, 60, 385);
+            drawText(fontSmall, "Block        S", gray, 60, 425);
+            drawText(fontSmall, "Taunt        T", gray, 60, 465);
+            drawText(fontSmall, "Grab         H", gray, 60, 505);
 
-            // Player 2 column
             drawText(fontMed, "Player 2", white, 480, 120);
-            drawText(fontSmall, "Move       LEFT / RIGHT", gray, 430, 185);
-            drawText(fontSmall, "Jump       UP", gray, 430, 225);
-            drawText(fontSmall, "Punch      K", gray, 430, 265);
-            drawText(fontSmall, "Kick       L", gray, 430, 305);
-            drawText(fontSmall, "Block      DOWN", gray, 430, 345);
-            drawText(fontSmall, "Taunt      P", gray, 430, 385);
-            drawText(fontSmall, "Grab       O", gray, 430, 425);
+            drawText(fontSmall, "Move         LEFT / RIGHT", gray, 430, 185);
+            drawText(fontSmall, "Jump         UP", gray, 430, 225);
+            drawText(fontSmall, "Double Jump  UP (air)", gray, 430, 265);
+            drawText(fontSmall, "Punch        K", gray, 430, 305);
+            drawText(fontSmall, "Air Attack   K (air)", gray, 430, 345);
+            drawText(fontSmall, "Kick         L", gray, 430, 385);
+            drawText(fontSmall, "Block        DOWN", gray, 430, 425);
+            drawText(fontSmall, "Taunt        P", gray, 430, 465);
+            drawText(fontSmall, "Grab         O", gray, 430, 505);
 
-            drawTextCentered(fontSmall, "Press ESC to go back", gray, 540);
+            drawTextCentered(fontSmall, "Press ESC to go back", gray, 560);
         }
         else if (state == ENTER_NAMES)
         {
             drawTextCentered(fontBig, "KING OF GOON", gold, 80);
-
             if (enteringP1)
             {
                 drawTextCentered(fontMed, "Enter Player 1 Name:", white, 230);
@@ -863,12 +956,21 @@ int main(int argc, char *argv[])
             SDL_FRect ground = {0, 500, 800, 10};
             SDL_RenderFillRect(renderer, &ground);
 
+            // Health bar backgrounds
             SDL_FRect p1healthBG = {50, 50, 200, 20};
             SDL_FRect p2healthBG = {550, 50, 200, 20};
             SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
             SDL_RenderFillRect(renderer, &p1healthBG);
             SDL_RenderFillRect(renderer, &p2healthBG);
 
+            // Smooth display health bar — yellow/orange trailing bar
+            SDL_FRect p1displayBar = {50, 50, (p1.displayHealth / 100.0f) * 200, 20};
+            SDL_FRect p2displayBar = {550, 50, (p2.displayHealth / 100.0f) * 200, 20};
+            SDL_SetRenderDrawColor(renderer, 255, 165, 0, 255);
+            SDL_RenderFillRect(renderer, &p1displayBar);
+            SDL_RenderFillRect(renderer, &p2displayBar);
+
+            // Real health bar on top
             SDL_FRect p1healthBar = {50, 50, (p1.health / 100.0f) * 200, 20};
             SDL_FRect p2healthBar = {550, 50, (p2.health / 100.0f) * 200, 20};
             SDL_SetRenderDrawColor(renderer, p1.health < 30 ? 255 : 0, p1.health >= 30 ? 255 : 0, 0, 255);
