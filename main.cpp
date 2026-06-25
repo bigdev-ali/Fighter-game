@@ -3,6 +3,8 @@
 #include <SDL3_image/SDL_image.h>
 #include <iostream>
 #include <string>
+#include <cstdlib>
+#include <ctime>
 
 enum GameState
 {
@@ -15,6 +17,13 @@ enum GameState
     PAUSED,
     ROUND_OVER,
     GAME_OVER
+};
+enum AIState
+{
+    AI_APPROACH,
+    AI_ATTACK,
+    AI_BLOCK,
+    AI_RETREAT
 };
 
 struct Player
@@ -143,7 +152,6 @@ struct Player
                 health = 100;
         }
 
-        // Smooth health bar — display health slides toward real health
         if (displayHealth > health)
         {
             displayHealth -= 15.0f * deltaTime;
@@ -185,7 +193,6 @@ struct Player
     }
 
     SDL_FRect getRect() { return {x, y, 80, 100}; }
-
     SDL_FRect getPunchHitbox(bool facingRight)
     {
         if (facingRight)
@@ -193,7 +200,6 @@ struct Player
         else
             return {x - 80, y + 20, 60, 30};
     }
-
     SDL_FRect getKickHitbox(bool facingRight)
     {
         if (facingRight)
@@ -201,7 +207,6 @@ struct Player
         else
             return {x - 80, y + 60, 80, 30};
     }
-
     SDL_FRect getGrabHitbox(bool facingRight)
     {
         if (facingRight)
@@ -209,7 +214,6 @@ struct Player
         else
             return {x - 50, y + 10, 50, 80};
     }
-
     SDL_FRect getAirAttackHitbox(bool facingRight)
     {
         if (facingRight)
@@ -219,8 +223,153 @@ struct Player
     }
 };
 
+// ========================
+// AI CONTROLLER
+// ========================
+struct AI
+{
+    AIState state;
+    float actionTimer;
+    float actionInterval;
+    float attackRange;
+    float retreatRange;
+
+    AI()
+    {
+        state = AI_APPROACH;
+        actionTimer = 0;
+        actionInterval = 0.5f;
+        attackRange = 120.0f;
+        retreatRange = 60.0f;
+    }
+
+    void reset()
+    {
+        state = AI_APPROACH;
+        actionTimer = 0;
+    }
+
+    void update(Player &ai, Player &player, float deltaTime)
+    {
+        actionTimer -= deltaTime;
+
+        float dist = ai.x - player.x;
+        float absDist = dist < 0 ? -dist : dist;
+        bool playerToRight = player.x > ai.x;
+
+        // Stop blocking if not being attacked
+        if (ai.blocking && !player.attacking && !player.kicking && !player.grabbing)
+            ai.blocking = false;
+
+        if (actionTimer <= 0)
+        {
+            actionTimer = actionInterval;
+            int roll = rand() % 100;
+
+            if (absDist > attackRange)
+            {
+                // Too far — approach
+                state = AI_APPROACH;
+            }
+            else if (absDist < retreatRange)
+            {
+                // Too close — retreat or attack
+                if (roll < 40)
+                    state = AI_RETREAT;
+                else
+                    state = AI_ATTACK;
+            }
+            else
+            {
+                // Good range — attack or block
+                if (player.attacking || player.kicking)
+                {
+                    if (roll < 50)
+                        state = AI_BLOCK;
+                    else
+                        state = AI_ATTACK;
+                }
+                else
+                {
+                    if (roll < 70)
+                        state = AI_ATTACK;
+                    else
+                        state = AI_BLOCK;
+                }
+            }
+        }
+
+        // Execute state
+        ai.blocking = false;
+
+        if (state == AI_APPROACH)
+        {
+            if (playerToRight)
+                ai.x += 200 * deltaTime;
+            else
+                ai.x -= 200 * deltaTime;
+        }
+        else if (state == AI_RETREAT)
+        {
+            if (playerToRight)
+                ai.x -= 150 * deltaTime;
+            else
+                ai.x += 150 * deltaTime;
+        }
+        else if (state == AI_BLOCK)
+        {
+            ai.blocking = true;
+        }
+        else if (state == AI_ATTACK)
+        {
+            if (absDist <= attackRange && !ai.attacking && !ai.kicking && !ai.grabbing)
+            {
+                int attackRoll = rand() % 3;
+                if (attackRoll == 0)
+                {
+                    ai.attacking = true;
+                    ai.attackTimer = 15;
+                }
+                else if (attackRoll == 1)
+                {
+                    ai.kicking = true;
+                    ai.kickTimer = 20;
+                }
+                else
+                {
+                    ai.grabbing = true;
+                    ai.grabTimer = 10;
+                }
+            }
+            else
+            {
+                // Move toward player to get in range
+                if (playerToRight)
+                    ai.x += 200 * deltaTime;
+                else
+                    ai.x -= 200 * deltaTime;
+            }
+        }
+
+        // Occasionally jump
+        if (!ai.jumping && rand() % 300 == 0)
+        {
+            ai.vy = -600.0f;
+            ai.jumping = true;
+        }
+
+        // Clamp boundaries
+        if (ai.x < 0)
+            ai.x = 0;
+        if (ai.x > 750)
+            ai.x = 750;
+    }
+};
+
 int main(int argc, char *argv[])
 {
+    srand((unsigned int)time(NULL));
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
         std::cout << "SDL failed to init: " << SDL_GetError() << std::endl;
@@ -291,7 +440,9 @@ int main(int argc, char *argv[])
     };
 
     Player p1("Player 1", p1tex, 100);
-    Player p2("Player 2", p2tex, 650);
+    Player p2("Computer", p2tex, 650);
+    AI ai;
+    bool vsComputer = false;
 
     float gravity = 1500.0f;
     float jumpForce = -600.0f;
@@ -314,8 +465,8 @@ int main(int argc, char *argv[])
     std::string p2NameInput = "";
     bool enteringP1 = true;
 
-    SDL_FRect btn2P = {250, 280, 300, 70};
-    SDL_FRect btnVSComp = {250, 380, 300, 70};
+    SDL_FRect btn2P = {250, 250, 300, 70};
+    SDL_FRect btnVSComp = {250, 350, 300, 70};
 
     auto drawButton = [&](SDL_FRect rect, const char *text, bool hovered)
     {
@@ -367,6 +518,7 @@ int main(int argc, char *argv[])
     {
         p1.reset(100);
         p2.reset(650);
+        ai.reset();
         currentRound = 1;
         p1wins = 0;
         p2wins = 0;
@@ -383,6 +535,7 @@ int main(int argc, char *argv[])
     {
         p1.reset(100);
         p2.reset(650);
+        ai.reset();
         stateTimer = 1.5f;
         roundTimer = 60.0f;
         flashTimer = 0.0f;
@@ -445,13 +598,25 @@ int main(int argc, char *argv[])
 
             if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
             {
-                if (state == MENU && hover2P)
+                if (state == MENU)
                 {
-                    p1NameInput = "";
-                    p2NameInput = "";
-                    enteringP1 = true;
-                    state = ENTER_NAMES;
-                    SDL_StartTextInput(window);
+                    if (hover2P)
+                    {
+                        vsComputer = false;
+                        p1NameInput = "";
+                        p2NameInput = "";
+                        enteringP1 = true;
+                        state = ENTER_NAMES;
+                        SDL_StartTextInput(window);
+                    }
+                    if (hoverVSComp)
+                    {
+                        vsComputer = true;
+                        p1NameInput = "";
+                        enteringP1 = true;
+                        state = ENTER_NAMES;
+                        SDL_StartTextInput(window);
+                    }
                 }
             }
 
@@ -491,7 +656,20 @@ int main(int argc, char *argv[])
                         {
                             if (p1NameInput.empty())
                                 p1NameInput = "Player 1";
-                            enteringP1 = false;
+                            if (vsComputer)
+                            {
+                                // Skip P2 name entry for computer
+                                p1.name = p1NameInput;
+                                p2.name = "Computer";
+                                SDL_StopTextInput(window);
+                                resetGame();
+                                state = SHOW_ROUND;
+                                playTheme();
+                            }
+                            else
+                            {
+                                enteringP1 = false;
+                            }
                         }
                         else
                         {
@@ -532,7 +710,6 @@ int main(int argc, char *argv[])
 
                 if (state == PLAYING)
                 {
-                    // P1 jump and double jump
                     if (event.key.scancode == SDL_SCANCODE_W && !p1.taunting)
                     {
                         if (!p1.jumping)
@@ -546,8 +723,7 @@ int main(int argc, char *argv[])
                             p1.hasDoubleJumped = true;
                         }
                     }
-                    // P2 jump and double jump
-                    if (event.key.scancode == SDL_SCANCODE_UP && !p2.taunting)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_UP && !p2.taunting)
                     {
                         if (!p2.jumping)
                         {
@@ -560,7 +736,6 @@ int main(int argc, char *argv[])
                             p2.hasDoubleJumped = true;
                         }
                     }
-                    // P1 punch — ground or air
                     if (event.key.scancode == SDL_SCANCODE_F && !p1.blocking && !p1.taunting && !p1.grabbing)
                     {
                         if (!p1.jumping && !p1.attacking && !p1.kicking)
@@ -574,8 +749,7 @@ int main(int argc, char *argv[])
                             p1.airAttackTimer = 15;
                         }
                     }
-                    // P2 punch — ground or air
-                    if (event.key.scancode == SDL_SCANCODE_K && !p2.blocking && !p2.taunting && !p2.grabbing)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_K && !p2.blocking && !p2.taunting && !p2.grabbing)
                     {
                         if (!p2.jumping && !p2.attacking && !p2.kicking)
                         {
@@ -593,7 +767,7 @@ int main(int argc, char *argv[])
                         p1.kicking = true;
                         p1.kickTimer = 20;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking && !p2.taunting && !p2.grabbing && !p2.jumping)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking && !p2.taunting && !p2.grabbing && !p2.jumping)
                     {
                         p2.kicking = true;
                         p2.kickTimer = 20;
@@ -603,7 +777,7 @@ int main(int argc, char *argv[])
                         p1.grabbing = true;
                         p1.grabTimer = 10;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_O && !p2.grabbing && !p2.attacking && !p2.kicking && !p2.blocking && !p2.taunting && !p2.jumping)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_O && !p2.grabbing && !p2.attacking && !p2.kicking && !p2.blocking && !p2.taunting && !p2.jumping)
                     {
                         p2.grabbing = true;
                         p2.grabTimer = 10;
@@ -616,9 +790,13 @@ int main(int argc, char *argv[])
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
             p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting && !p1.jumping;
-            p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting && !p2.jumping;
             p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.grabbing && !p1.jumping;
-            p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking && !p2.grabbing && !p2.jumping;
+
+            if (!vsComputer)
+            {
+                p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting && !p2.jumping;
+                p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking && !p2.grabbing && !p2.jumping;
+            }
         }
 
         if (state == SHOW_ROUND)
@@ -650,7 +828,7 @@ int main(int argc, char *argv[])
                 if (keys[SDL_SCANCODE_D])
                     p1.x += 300 * deltaTime;
             }
-            if (!p2.blocking && !p2.taunting)
+            if (!vsComputer && !p2.blocking && !p2.taunting)
             {
                 if (keys[SDL_SCANCODE_LEFT])
                     p2.x -= 300 * deltaTime;
@@ -666,6 +844,10 @@ int main(int argc, char *argv[])
                 p2.x = 0;
             if (p2.x > 750)
                 p2.x = 750;
+
+            // Run AI if vs computer
+            if (vsComputer)
+                ai.update(p2, p1, deltaTime);
 
             p1.update(deltaTime, gravity, groundY);
             p2.update(deltaTime, gravity, groundY);
@@ -719,7 +901,6 @@ int main(int argc, char *argv[])
             SDL_FRect p1air = p1.getAirAttackHitbox(true);
             SDL_FRect p2air = p2.getAirAttackHitbox(false);
 
-            // Ground punch
             if (p1.attacking && SDL_HasRectIntersectionFloat(&p1punch, &p2rect))
             {
                 if (p2.blocking)
@@ -748,7 +929,6 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-            // Kick
             if (p1.kicking && SDL_HasRectIntersectionFloat(&p1kick, &p2rect))
             {
                 if (p2.blocking)
@@ -777,7 +957,6 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-            // Grab
             if (p1.grabbing && SDL_HasRectIntersectionFloat(&p1grab, &p2rect))
             {
                 if (p2.blocking)
@@ -808,7 +987,6 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
-            // Air attack
             if (p1.airAttacking && SDL_HasRectIntersectionFloat(&p1air, &p2rect))
             {
                 if (p2.blocking)
@@ -930,9 +1108,10 @@ int main(int argc, char *argv[])
         else if (state == ENTER_NAMES)
         {
             drawTextCentered(fontBig, "KING OF GOON", gold, 80);
+
             if (enteringP1)
             {
-                drawTextCentered(fontMed, "Enter Player 1 Name:", white, 230);
+                drawTextCentered(fontMed, "Enter Your Name:", white, 230);
                 std::string display = p1NameInput + "|";
                 drawTextCentered(fontBig, display.c_str(), gold, 310);
                 drawTextCentered(fontSmall, "Press ENTER to confirm", gray, 430);
@@ -956,21 +1135,18 @@ int main(int argc, char *argv[])
             SDL_FRect ground = {0, 500, 800, 10};
             SDL_RenderFillRect(renderer, &ground);
 
-            // Health bar backgrounds
             SDL_FRect p1healthBG = {50, 50, 200, 20};
             SDL_FRect p2healthBG = {550, 50, 200, 20};
             SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
             SDL_RenderFillRect(renderer, &p1healthBG);
             SDL_RenderFillRect(renderer, &p2healthBG);
 
-            // Smooth display health bar — yellow/orange trailing bar
             SDL_FRect p1displayBar = {50, 50, (p1.displayHealth / 100.0f) * 200, 20};
             SDL_FRect p2displayBar = {550, 50, (p2.displayHealth / 100.0f) * 200, 20};
             SDL_SetRenderDrawColor(renderer, 255, 165, 0, 255);
             SDL_RenderFillRect(renderer, &p1displayBar);
             SDL_RenderFillRect(renderer, &p2displayBar);
 
-            // Real health bar on top
             SDL_FRect p1healthBar = {50, 50, (p1.health / 100.0f) * 200, 20};
             SDL_FRect p2healthBar = {550, 50, (p2.health / 100.0f) * 200, 20};
             SDL_SetRenderDrawColor(renderer, p1.health < 30 ? 255 : 0, p1.health >= 30 ? 255 : 0, 0, 255);
