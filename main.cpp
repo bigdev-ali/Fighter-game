@@ -26,6 +26,43 @@ enum AIState
     AI_RETREAT
 };
 
+struct Projectile
+{
+    float x, y;
+    float vx;
+    bool active;
+    bool fromP1;
+
+    Projectile()
+    {
+        active = false;
+        x = 0;
+        y = 0;
+        vx = 0;
+        fromP1 = true;
+    }
+
+    void fire(float startX, float startY, bool goingRight, bool p1)
+    {
+        x = startX;
+        y = startY;
+        vx = goingRight ? 900.0f : -900.0f;
+        active = true;
+        fromP1 = p1;
+    }
+
+    void update(float deltaTime)
+    {
+        if (!active)
+            return;
+        x += vx * deltaTime;
+        if (x < 0 || x > 800)
+            active = false;
+    }
+
+    SDL_FRect getRect() { return {x, y, 20, 20}; }
+};
+
 struct Player
 {
     float x, y;
@@ -37,6 +74,9 @@ struct Player
     bool hasDoubleJumped;
     bool attacking, kicking, blocking, taunting, grabbing;
     bool airAttacking;
+    bool charging;
+    float chargeTimer;
+    float chargeMaxTime;
     int attackTimer, kickTimer, grabTimer;
     int airAttackTimer;
     int flicker;
@@ -61,6 +101,9 @@ struct Player
         taunting = false;
         grabbing = false;
         airAttacking = false;
+        charging = false;
+        chargeTimer = 0;
+        chargeMaxTime = 1.5f;
         attackTimer = 0;
         kickTimer = 0;
         grabTimer = 0;
@@ -84,6 +127,8 @@ struct Player
         taunting = false;
         grabbing = false;
         airAttacking = false;
+        charging = false;
+        chargeTimer = 0;
         attackTimer = 0;
         kickTimer = 0;
         grabTimer = 0;
@@ -163,7 +208,9 @@ struct Player
     void draw(SDL_Renderer *renderer)
     {
         SDL_FRect rect = {x, y, 80, 100};
-        if (taunting)
+        if (charging)
+            SDL_SetTextureColorMod(sprite, 255, 255, 50);
+        else if (taunting)
             SDL_SetTextureColorMod(sprite, 255, 215, 0);
         else if (blocking)
             SDL_SetTextureColorMod(sprite, 50, 50, 255);
@@ -172,6 +219,17 @@ struct Player
         else
             SDL_SetTextureColorMod(sprite, 255, 255, 255);
         SDL_RenderTexture(renderer, sprite, NULL, &rect);
+
+        // Draw charge bar above player
+        if (charging)
+        {
+            SDL_FRect chargeBG = {x, y - 15, 80, 8};
+            SDL_FRect chargeBar = {x, y - 15, (chargeTimer / chargeMaxTime) * 80, 8};
+            SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
+            SDL_RenderFillRect(renderer, &chargeBG);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+            SDL_RenderFillRect(renderer, &chargeBar);
+        }
     }
 
     void takeDamage(float amount)
@@ -181,6 +239,8 @@ struct Player
             health = 0;
         flicker = 10;
         taunting = false;
+        charging = false;
+        chargeTimer = 0;
     }
 
     void getThrown(bool thrownRight)
@@ -189,8 +249,12 @@ struct Player
         vx = thrownRight ? 800.0f : -800.0f;
         jumping = true;
         taunting = false;
+        charging = false;
+        chargeTimer = 0;
         flicker = 15;
     }
+
+    bool isFullyCharged() { return chargeTimer >= chargeMaxTime; }
 
     SDL_FRect getRect() { return {x, y, 80, 100}; }
     SDL_FRect getPunchHitbox(bool facingRight)
@@ -223,9 +287,6 @@ struct Player
     }
 };
 
-// ========================
-// AI CONTROLLER
-// ========================
 struct AI
 {
     AIState state;
@@ -257,7 +318,6 @@ struct AI
         float absDist = dist < 0 ? -dist : dist;
         bool playerToRight = player.x > ai.x;
 
-        // Stop blocking if not being attacked
         if (ai.blocking && !player.attacking && !player.kicking && !player.grabbing)
             ai.blocking = false;
 
@@ -267,13 +327,9 @@ struct AI
             int roll = rand() % 100;
 
             if (absDist > attackRange)
-            {
-                // Too far — approach
                 state = AI_APPROACH;
-            }
             else if (absDist < retreatRange)
             {
-                // Too close — retreat or attack
                 if (roll < 40)
                     state = AI_RETREAT;
                 else
@@ -281,7 +337,6 @@ struct AI
             }
             else
             {
-                // Good range — attack or block
                 if (player.attacking || player.kicking)
                 {
                     if (roll < 50)
@@ -299,7 +354,6 @@ struct AI
             }
         }
 
-        // Execute state
         ai.blocking = false;
 
         if (state == AI_APPROACH)
@@ -343,7 +397,6 @@ struct AI
             }
             else
             {
-                // Move toward player to get in range
                 if (playerToRight)
                     ai.x += 200 * deltaTime;
                 else
@@ -351,14 +404,12 @@ struct AI
             }
         }
 
-        // Occasionally jump
         if (!ai.jumping && rand() % 300 == 0)
         {
             ai.vy = -600.0f;
             ai.jumping = true;
         }
 
-        // Clamp boundaries
         if (ai.x < 0)
             ai.x = 0;
         if (ai.x > 750)
@@ -444,6 +495,8 @@ int main(int argc, char *argv[])
     AI ai;
     bool vsComputer = false;
 
+    Projectile p1proj, p2proj;
+
     float gravity = 1500.0f;
     float jumpForce = -600.0f;
     float groundY = 400.0f;
@@ -519,6 +572,8 @@ int main(int argc, char *argv[])
         p1.reset(100);
         p2.reset(650);
         ai.reset();
+        p1proj.active = false;
+        p2proj.active = false;
         currentRound = 1;
         p1wins = 0;
         p2wins = 0;
@@ -536,6 +591,8 @@ int main(int argc, char *argv[])
         p1.reset(100);
         p2.reset(650);
         ai.reset();
+        p1proj.active = false;
+        p2proj.active = false;
         stateTimer = 1.5f;
         roundTimer = 60.0f;
         flashTimer = 0.0f;
@@ -658,7 +715,6 @@ int main(int argc, char *argv[])
                                 p1NameInput = "Player 1";
                             if (vsComputer)
                             {
-                                // Skip P2 name entry for computer
                                 p1.name = p1NameInput;
                                 p2.name = "Computer";
                                 SDL_StopTextInput(window);
@@ -667,9 +723,7 @@ int main(int argc, char *argv[])
                                 playTheme();
                             }
                             else
-                            {
                                 enteringP1 = false;
-                            }
                         }
                         else
                         {
@@ -710,7 +764,8 @@ int main(int argc, char *argv[])
 
                 if (state == PLAYING)
                 {
-                    if (event.key.scancode == SDL_SCANCODE_W && !p1.taunting)
+                    // Jump
+                    if (event.key.scancode == SDL_SCANCODE_W && !p1.taunting && !p1.charging)
                     {
                         if (!p1.jumping)
                         {
@@ -723,7 +778,7 @@ int main(int argc, char *argv[])
                             p1.hasDoubleJumped = true;
                         }
                     }
-                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_UP && !p2.taunting)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_UP && !p2.taunting && !p2.charging)
                     {
                         if (!p2.jumping)
                         {
@@ -736,7 +791,8 @@ int main(int argc, char *argv[])
                             p2.hasDoubleJumped = true;
                         }
                     }
-                    if (event.key.scancode == SDL_SCANCODE_F && !p1.blocking && !p1.taunting && !p1.grabbing)
+                    // Punch
+                    if (event.key.scancode == SDL_SCANCODE_F && !p1.blocking && !p1.taunting && !p1.grabbing && !p1.charging)
                     {
                         if (!p1.jumping && !p1.attacking && !p1.kicking)
                         {
@@ -749,7 +805,7 @@ int main(int argc, char *argv[])
                             p1.airAttackTimer = 15;
                         }
                     }
-                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_K && !p2.blocking && !p2.taunting && !p2.grabbing)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_K && !p2.blocking && !p2.taunting && !p2.grabbing && !p2.charging)
                     {
                         if (!p2.jumping && !p2.attacking && !p2.kicking)
                         {
@@ -762,26 +818,56 @@ int main(int argc, char *argv[])
                             p2.airAttackTimer = 15;
                         }
                     }
-                    if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking && !p1.taunting && !p1.grabbing && !p1.jumping)
+                    // Kick
+                    if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking && !p1.taunting && !p1.grabbing && !p1.jumping && !p1.charging)
                     {
                         p1.kicking = true;
                         p1.kickTimer = 20;
                     }
-                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking && !p2.taunting && !p2.grabbing && !p2.jumping)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_L && !p2.kicking && !p2.blocking && !p2.attacking && !p2.taunting && !p2.grabbing && !p2.jumping && !p2.charging)
                     {
                         p2.kicking = true;
                         p2.kickTimer = 20;
                     }
-                    if (event.key.scancode == SDL_SCANCODE_H && !p1.grabbing && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting && !p1.jumping)
+                    // Grab
+                    if (event.key.scancode == SDL_SCANCODE_H && !p1.grabbing && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting && !p1.jumping && !p1.charging)
                     {
                         p1.grabbing = true;
                         p1.grabTimer = 10;
                     }
-                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_O && !p2.grabbing && !p2.attacking && !p2.kicking && !p2.blocking && !p2.taunting && !p2.jumping)
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_O && !p2.grabbing && !p2.attacking && !p2.kicking && !p2.blocking && !p2.taunting && !p2.jumping && !p2.charging)
                     {
                         p2.grabbing = true;
                         p2.grabTimer = 10;
                     }
+                    // Release special
+                    if (event.key.scancode == SDL_SCANCODE_E && p1.isFullyCharged() && !p1proj.active)
+                    {
+                        p1proj.fire(p1.x + 80, p1.y + 50, true, true);
+                        p1.charging = false;
+                        p1.chargeTimer = 0;
+                    }
+                    if (!vsComputer && event.key.scancode == SDL_SCANCODE_I && p2.isFullyCharged() && !p2proj.active)
+                    {
+                        p2proj.fire(p2.x - 20, p2.y + 50, false, false);
+                        p2.charging = false;
+                        p2.chargeTimer = 0;
+                    }
+                }
+            }
+
+            // Release charge if key released before full
+            if (event.type == SDL_EVENT_KEY_UP)
+            {
+                if (event.key.scancode == SDL_SCANCODE_E && !p1.isFullyCharged())
+                {
+                    p1.charging = false;
+                    p1.chargeTimer = 0;
+                }
+                if (!vsComputer && event.key.scancode == SDL_SCANCODE_I && !p2.isFullyCharged())
+                {
+                    p2.charging = false;
+                    p2.chargeTimer = 0;
                 }
             }
         }
@@ -789,13 +875,28 @@ int main(int argc, char *argv[])
         if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
-            p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting && !p1.jumping;
-            p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.grabbing && !p1.jumping;
+            p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting && !p1.jumping && !p1.charging;
+            p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.grabbing && !p1.jumping && !p1.charging;
+
+            // Charging held
+            if (keys[SDL_SCANCODE_E] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting && !p1.grabbing && !p1.jumping && !p1proj.active)
+            {
+                p1.charging = true;
+                if (p1.chargeTimer < p1.chargeMaxTime)
+                    p1.chargeTimer += deltaTime;
+            }
 
             if (!vsComputer)
             {
-                p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting && !p2.jumping;
-                p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking && !p2.grabbing && !p2.jumping;
+                p2.blocking = keys[SDL_SCANCODE_DOWN] && !p2.taunting && !p2.jumping && !p2.charging;
+                p2.taunting = keys[SDL_SCANCODE_P] && !p2.attacking && !p2.kicking && !p2.blocking && !p2.grabbing && !p2.jumping && !p2.charging;
+
+                if (keys[SDL_SCANCODE_I] && !p2.attacking && !p2.kicking && !p2.blocking && !p2.taunting && !p2.grabbing && !p2.jumping && !p2proj.active)
+                {
+                    p2.charging = true;
+                    if (p2.chargeTimer < p2.chargeMaxTime)
+                        p2.chargeTimer += deltaTime;
+                }
             }
         }
 
@@ -821,14 +922,14 @@ int main(int argc, char *argv[])
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
 
-            if (!p1.blocking && !p1.taunting)
+            if (!p1.blocking && !p1.taunting && !p1.charging)
             {
                 if (keys[SDL_SCANCODE_A])
                     p1.x -= 300 * deltaTime;
                 if (keys[SDL_SCANCODE_D])
                     p1.x += 300 * deltaTime;
             }
-            if (!vsComputer && !p2.blocking && !p2.taunting)
+            if (!vsComputer && !p2.blocking && !p2.taunting && !p2.charging)
             {
                 if (keys[SDL_SCANCODE_LEFT])
                     p2.x -= 300 * deltaTime;
@@ -845,12 +946,13 @@ int main(int argc, char *argv[])
             if (p2.x > 750)
                 p2.x = 750;
 
-            // Run AI if vs computer
             if (vsComputer)
                 ai.update(p2, p1, deltaTime);
 
             p1.update(deltaTime, gravity, groundY);
             p2.update(deltaTime, gravity, groundY);
+            p1proj.update(deltaTime);
+            p2proj.update(deltaTime);
 
             if (p1.x < 0)
                 p1.x = 0;
@@ -901,6 +1003,7 @@ int main(int argc, char *argv[])
             SDL_FRect p1air = p1.getAirAttackHitbox(true);
             SDL_FRect p2air = p2.getAirAttackHitbox(false);
 
+            // Punch
             if (p1.attacking && SDL_HasRectIntersectionFloat(&p1punch, &p2rect))
             {
                 if (p2.blocking)
@@ -929,6 +1032,7 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
+            // Kick
             if (p1.kicking && SDL_HasRectIntersectionFloat(&p1kick, &p2rect))
             {
                 if (p2.blocking)
@@ -957,6 +1061,7 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
+            // Grab
             if (p1.grabbing && SDL_HasRectIntersectionFloat(&p1grab, &p2rect))
             {
                 if (p2.blocking)
@@ -987,6 +1092,7 @@ int main(int argc, char *argv[])
                     playHit();
                 }
             }
+            // Air attack
             if (p1.airAttacking && SDL_HasRectIntersectionFloat(&p1air, &p2rect))
             {
                 if (p2.blocking)
@@ -1013,6 +1119,45 @@ int main(int argc, char *argv[])
                 {
                     p1.takeDamage(0.5f);
                     playHit();
+                }
+            }
+            // Projectile hits
+            if (p1proj.active)
+            {
+                SDL_FRect projRect = p1proj.getRect();
+                if (SDL_HasRectIntersectionFloat(&projRect, &p2rect))
+                {
+                    if (p2.blocking)
+                    {
+                        p2.health -= 0.3f;
+                        if (p2.health < 0)
+                            p2.health = 0;
+                    }
+                    else
+                    {
+                        p2.takeDamage(2.5f);
+                        playHit();
+                    }
+                    p1proj.active = false;
+                }
+            }
+            if (p2proj.active)
+            {
+                SDL_FRect projRect = p2proj.getRect();
+                if (SDL_HasRectIntersectionFloat(&projRect, &p1rect))
+                {
+                    if (p1.blocking)
+                    {
+                        p1.health -= 0.3f;
+                        if (p1.health < 0)
+                            p1.health = 0;
+                    }
+                    else
+                    {
+                        p1.takeDamage(2.5f);
+                        playHit();
+                    }
+                    p2proj.active = false;
                 }
             }
 
@@ -1082,33 +1227,34 @@ int main(int argc, char *argv[])
             SDL_RenderLine(renderer, 400, 120, 400, 560);
 
             drawText(fontMed, "Player 1", white, 80, 120);
-            drawText(fontSmall, "Move         A / D", gray, 60, 185);
-            drawText(fontSmall, "Jump         W", gray, 60, 225);
-            drawText(fontSmall, "Double Jump  W (air)", gray, 60, 265);
-            drawText(fontSmall, "Punch        F", gray, 60, 305);
-            drawText(fontSmall, "Air Attack   F (air)", gray, 60, 345);
-            drawText(fontSmall, "Kick         G", gray, 60, 385);
-            drawText(fontSmall, "Block        S", gray, 60, 425);
-            drawText(fontSmall, "Taunt        T", gray, 60, 465);
-            drawText(fontSmall, "Grab         H", gray, 60, 505);
+            drawText(fontSmall, "Move         A / D", gray, 60, 175);
+            drawText(fontSmall, "Jump         W", gray, 60, 210);
+            drawText(fontSmall, "Double Jump  W (air)", gray, 60, 245);
+            drawText(fontSmall, "Punch        F", gray, 60, 280);
+            drawText(fontSmall, "Air Attack   F (air)", gray, 60, 315);
+            drawText(fontSmall, "Kick         G", gray, 60, 350);
+            drawText(fontSmall, "Block        S", gray, 60, 385);
+            drawText(fontSmall, "Taunt        T", gray, 60, 420);
+            drawText(fontSmall, "Grab         H", gray, 60, 455);
+            drawText(fontSmall, "Special      Hold E", gray, 60, 490);
 
             drawText(fontMed, "Player 2", white, 480, 120);
-            drawText(fontSmall, "Move         LEFT / RIGHT", gray, 430, 185);
-            drawText(fontSmall, "Jump         UP", gray, 430, 225);
-            drawText(fontSmall, "Double Jump  UP (air)", gray, 430, 265);
-            drawText(fontSmall, "Punch        K", gray, 430, 305);
-            drawText(fontSmall, "Air Attack   K (air)", gray, 430, 345);
-            drawText(fontSmall, "Kick         L", gray, 430, 385);
-            drawText(fontSmall, "Block        DOWN", gray, 430, 425);
-            drawText(fontSmall, "Taunt        P", gray, 430, 465);
-            drawText(fontSmall, "Grab         O", gray, 430, 505);
+            drawText(fontSmall, "Move         LEFT / RIGHT", gray, 430, 175);
+            drawText(fontSmall, "Jump         UP", gray, 430, 210);
+            drawText(fontSmall, "Double Jump  UP (air)", gray, 430, 245);
+            drawText(fontSmall, "Punch        K", gray, 430, 280);
+            drawText(fontSmall, "Air Attack   K (air)", gray, 430, 315);
+            drawText(fontSmall, "Kick         L", gray, 430, 350);
+            drawText(fontSmall, "Block        DOWN", gray, 430, 385);
+            drawText(fontSmall, "Taunt        P", gray, 430, 420);
+            drawText(fontSmall, "Grab         O", gray, 430, 455);
+            drawText(fontSmall, "Special      Hold I", gray, 430, 490);
 
-            drawTextCentered(fontSmall, "Press ESC to go back", gray, 560);
+            drawTextCentered(fontSmall, "Press ESC to go back", gray, 540);
         }
         else if (state == ENTER_NAMES)
         {
             drawTextCentered(fontBig, "KING OF GOON", gold, 80);
-
             if (enteringP1)
             {
                 drawTextCentered(fontMed, "Enter Your Name:", white, 230);
@@ -1173,6 +1319,31 @@ int main(int argc, char *argv[])
             int timerSeconds = (int)roundTimer;
             SDL_Color timerColor = timerSeconds <= 10 ? red : white;
             drawTextCentered(fontTimer, std::to_string(timerSeconds).c_str(), timerColor, 40);
+
+            // Draw projectiles
+            if (p1proj.active)
+            {
+                SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+                SDL_FRect projRect = p1proj.getRect();
+                SDL_RenderFillRect(renderer, &projRect);
+                // Glow effect
+                SDL_SetRenderDrawColor(renderer, 255, 200, 0, 100);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                SDL_FRect glowRect = {projRect.x - 5, projRect.y - 5, projRect.w + 10, projRect.h + 10};
+                SDL_RenderFillRect(renderer, &glowRect);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+            }
+            if (p2proj.active)
+            {
+                SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+                SDL_FRect projRect = p2proj.getRect();
+                SDL_RenderFillRect(renderer, &projRect);
+                SDL_SetRenderDrawColor(renderer, 255, 200, 0, 100);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                SDL_FRect glowRect = {projRect.x - 5, projRect.y - 5, projRect.w + 10, projRect.h + 10};
+                SDL_RenderFillRect(renderer, &glowRect);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+            }
 
             p1.draw(renderer);
             p2.draw(renderer);
