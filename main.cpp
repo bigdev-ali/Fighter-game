@@ -6,28 +6,10 @@
 #include <cstdlib>
 #include <ctime>
 
-enum GameState
-{
-    MENU,
-    CONTROLS,
-    ENTER_NAMES,
-    SHOW_ROUND,
-    SHOW_FIGHT,
-    PLAYING,
-    PAUSED,
-    ROUND_OVER,
-    GAME_OVER
-};
-enum AIState
-{
-    AI_APPROACH,
-    AI_ATTACK,
-    AI_BLOCK,
-    AI_RETREAT
-};
+enum GameState { MENU, CONTROLS, ENTER_NAMES, SHOW_ROUND, SHOW_FIGHT, PLAYING, PAUSED, ROUND_OVER, GAME_OVER };
+enum AIState { AI_APPROACH, AI_ATTACK, AI_BLOCK, AI_RETREAT };
 
-struct Projectile
-{
+struct Projectile {
     float x, y;
     float vx;
     bool active;
@@ -36,8 +18,7 @@ struct Projectile
     Projectile()
     {
         active = false;
-        x = 0;
-        y = 0;
+        x = 0; y = 0;
         vx = 0;
         fromP1 = true;
     }
@@ -53,18 +34,15 @@ struct Projectile
 
     void update(float deltaTime)
     {
-        if (!active)
-            return;
+        if (!active) return;
         x += vx * deltaTime;
-        if (x < 0 || x > 800)
-            active = false;
+        if (x < 0 || x > 800) active = false;
     }
 
     SDL_FRect getRect() { return {x, y, 20, 20}; }
 };
 
-struct Player
-{
+struct Player {
     float x, y;
     float vy;
     float vx;
@@ -139,18 +117,8 @@ struct Player
     void update(float deltaTime, float gravity, float groundY)
     {
         x += vx * deltaTime;
-        if (vx > 0)
-        {
-            vx -= 800 * deltaTime;
-            if (vx < 0)
-                vx = 0;
-        }
-        if (vx < 0)
-        {
-            vx += 800 * deltaTime;
-            if (vx > 0)
-                vx = 0;
-        }
+        if (vx > 0) { vx -= 800 * deltaTime; if (vx < 0) vx = 0; }
+        if (vx < 0) { vx += 800 * deltaTime; if (vx > 0) vx = 0; }
 
         vy += gravity * deltaTime;
         y += vy * deltaTime;
@@ -163,45 +131,22 @@ struct Player
             airAttacking = false;
         }
 
-        if (attacking)
-        {
-            attackTimer--;
-            if (attackTimer <= 0)
-                attacking = false;
-        }
-        if (kicking)
-        {
-            kickTimer--;
-            if (kickTimer <= 0)
-                kicking = false;
-        }
-        if (grabbing)
-        {
-            grabTimer--;
-            if (grabTimer <= 0)
-                grabbing = false;
-        }
-        if (airAttacking)
-        {
-            airAttackTimer--;
-            if (airAttackTimer <= 0)
-                airAttacking = false;
-        }
-        if (flicker > 0)
-            flicker--;
+        if (attacking) { attackTimer--; if (attackTimer <= 0) attacking = false; }
+        if (kicking) { kickTimer--; if (kickTimer <= 0) kicking = false; }
+        if (grabbing) { grabTimer--; if (grabTimer <= 0) grabbing = false; }
+        if (airAttacking) { airAttackTimer--; if (airAttackTimer <= 0) airAttacking = false; }
+        if (flicker > 0) flicker--;
 
         if (taunting && health < 100)
         {
             health += 0.2f * deltaTime;
-            if (health > 100)
-                health = 100;
+            if (health > 100) health = 100;
         }
 
         if (displayHealth > health)
         {
             displayHealth -= 15.0f * deltaTime;
-            if (displayHealth < health)
-                displayHealth = health;
+            if (displayHealth < health) displayHealth = health;
         }
     }
 
@@ -220,7 +165,6 @@ struct Player
             SDL_SetTextureColorMod(sprite, 255, 255, 255);
         SDL_RenderTexture(renderer, sprite, NULL, &rect);
 
-        // Draw charge bar above player
         if (charging)
         {
             SDL_FRect chargeBG = {x, y - 15, 80, 8};
@@ -235,8 +179,7 @@ struct Player
     void takeDamage(float amount)
     {
         health -= amount;
-        if (health < 0)
-            health = 0;
+        if (health < 0) health = 0;
         flicker = 10;
         taunting = false;
         charging = false;
@@ -259,36 +202,27 @@ struct Player
     SDL_FRect getRect() { return {x, y, 80, 100}; }
     SDL_FRect getPunchHitbox(bool facingRight)
     {
-        if (facingRight)
-            return {x + 80, y + 20, 60, 30};
-        else
-            return {x - 80, y + 20, 60, 30};
+        if (facingRight) return {x + 80, y + 20, 60, 30};
+        else return {x - 80, y + 20, 60, 30};
     }
     SDL_FRect getKickHitbox(bool facingRight)
     {
-        if (facingRight)
-            return {x + 80, y + 60, 80, 30};
-        else
-            return {x - 80, y + 60, 80, 30};
+        if (facingRight) return {x + 80, y + 60, 80, 30};
+        else return {x - 80, y + 60, 80, 30};
     }
     SDL_FRect getGrabHitbox(bool facingRight)
     {
-        if (facingRight)
-            return {x + 80, y + 10, 50, 80};
-        else
-            return {x - 50, y + 10, 50, 80};
+        if (facingRight) return {x + 80, y + 10, 50, 80};
+        else return {x - 50, y + 10, 50, 80};
     }
     SDL_FRect getAirAttackHitbox(bool facingRight)
     {
-        if (facingRight)
-            return {x + 60, y + 80, 80, 40};
-        else
-            return {x - 80, y + 80, 80, 40};
+        if (facingRight) return {x + 60, y + 80, 80, 40};
+        else return {x - 80, y + 80, 80, 40};
     }
 };
 
-struct AI
-{
+struct AI {
     AIState state;
     float actionTimer;
     float actionInterval;
@@ -313,7 +247,6 @@ struct AI
     void update(Player &ai, Player &player, float deltaTime)
     {
         actionTimer -= deltaTime;
-
         float dist = ai.x - player.x;
         float absDist = dist < 0 ? -dist : dist;
         bool playerToRight = player.x > ai.x;
@@ -326,30 +259,23 @@ struct AI
             actionTimer = actionInterval;
             int roll = rand() % 100;
 
-            if (absDist > attackRange)
-                state = AI_APPROACH;
+            if (absDist > attackRange) state = AI_APPROACH;
             else if (absDist < retreatRange)
             {
-                if (roll < 40)
-                    state = AI_RETREAT;
-                else
-                    state = AI_ATTACK;
+                if (roll < 40) state = AI_RETREAT;
+                else state = AI_ATTACK;
             }
             else
             {
                 if (player.attacking || player.kicking)
                 {
-                    if (roll < 50)
-                        state = AI_BLOCK;
-                    else
-                        state = AI_ATTACK;
+                    if (roll < 50) state = AI_BLOCK;
+                    else state = AI_ATTACK;
                 }
                 else
                 {
-                    if (roll < 70)
-                        state = AI_ATTACK;
-                    else
-                        state = AI_BLOCK;
+                    if (roll < 70) state = AI_ATTACK;
+                    else state = AI_BLOCK;
                 }
             }
         }
@@ -358,17 +284,13 @@ struct AI
 
         if (state == AI_APPROACH)
         {
-            if (playerToRight)
-                ai.x += 200 * deltaTime;
-            else
-                ai.x -= 200 * deltaTime;
+            if (playerToRight) ai.x += 200 * deltaTime;
+            else ai.x -= 200 * deltaTime;
         }
         else if (state == AI_RETREAT)
         {
-            if (playerToRight)
-                ai.x -= 150 * deltaTime;
-            else
-                ai.x += 150 * deltaTime;
+            if (playerToRight) ai.x -= 150 * deltaTime;
+            else ai.x += 150 * deltaTime;
         }
         else if (state == AI_BLOCK)
         {
@@ -379,28 +301,14 @@ struct AI
             if (absDist <= attackRange && !ai.attacking && !ai.kicking && !ai.grabbing)
             {
                 int attackRoll = rand() % 3;
-                if (attackRoll == 0)
-                {
-                    ai.attacking = true;
-                    ai.attackTimer = 15;
-                }
-                else if (attackRoll == 1)
-                {
-                    ai.kicking = true;
-                    ai.kickTimer = 20;
-                }
-                else
-                {
-                    ai.grabbing = true;
-                    ai.grabTimer = 10;
-                }
+                if (attackRoll == 0) { ai.attacking = true; ai.attackTimer = 15; }
+                else if (attackRoll == 1) { ai.kicking = true; ai.kickTimer = 20; }
+                else { ai.grabbing = true; ai.grabTimer = 10; }
             }
             else
             {
-                if (playerToRight)
-                    ai.x += 200 * deltaTime;
-                else
-                    ai.x -= 200 * deltaTime;
+                if (playerToRight) ai.x += 200 * deltaTime;
+                else ai.x -= 200 * deltaTime;
             }
         }
 
@@ -410,10 +318,8 @@ struct AI
             ai.jumping = true;
         }
 
-        if (ai.x < 0)
-            ai.x = 0;
-        if (ai.x > 750)
-            ai.x = 750;
+        if (ai.x < 0) ai.x = 0;
+        if (ai.x > 750) ai.x = 750;
     }
 };
 
@@ -469,23 +375,20 @@ int main(int argc, char *argv[])
     SDL_AudioStream *themeStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &themeSpec, NULL, NULL);
     SDL_AudioStream *hitStream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &hitSpec, NULL, NULL);
 
-    auto playTheme = [&]()
-    {
+    auto playTheme = [&]() {
         SDL_ClearAudioStream(themeStream);
         for (int i = 0; i < 10; i++)
             SDL_PutAudioStreamData(themeStream, themeData, themeLen);
         SDL_ResumeAudioStreamDevice(themeStream);
     };
 
-    auto playHit = [&]()
-    {
+    auto playHit = [&]() {
         SDL_ClearAudioStream(hitStream);
         SDL_PutAudioStreamData(hitStream, hitData, hitLen);
         SDL_ResumeAudioStreamDevice(hitStream);
     };
 
-    auto stopTheme = [&]()
-    {
+    auto stopTheme = [&]() {
         SDL_ClearAudioStream(themeStream);
         SDL_PauseAudioStreamDevice(themeStream);
     };
@@ -521,8 +424,7 @@ int main(int argc, char *argv[])
     SDL_FRect btn2P = {250, 250, 300, 70};
     SDL_FRect btnVSComp = {250, 350, 300, 70};
 
-    auto drawButton = [&](SDL_FRect rect, const char *text, bool hovered)
-    {
+    auto drawButton = [&](SDL_FRect rect, const char *text, bool hovered) {
         if (hovered)
             SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
         else
@@ -537,16 +439,15 @@ int main(int argc, char *argv[])
             rect.x + (rect.w - surf->w) / 2,
             rect.y + (rect.h - surf->h) / 2,
             (float)surf->w,
-            (float)surf->h};
+            (float)surf->h
+        };
         SDL_RenderTexture(renderer, tex, NULL, &textRect);
         SDL_DestroySurface(surf);
         SDL_DestroyTexture(tex);
     };
 
-    auto drawText = [&](TTF_Font *font, const char *text, SDL_Color color, float x, float y)
-    {
-        if (std::string(text).empty())
-            return;
+    auto drawText = [&](TTF_Font *font, const char *text, SDL_Color color, float x, float y) {
+        if (std::string(text).empty()) return;
         SDL_Surface *surf = TTF_RenderText_Blended(font, text, 0, color);
         SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
         SDL_FRect rect = {x, y, (float)surf->w, (float)surf->h};
@@ -555,10 +456,8 @@ int main(int argc, char *argv[])
         SDL_DestroyTexture(tex);
     };
 
-    auto drawTextCentered = [&](TTF_Font *font, const char *text, SDL_Color color, float y)
-    {
-        if (std::string(text).empty())
-            return;
+    auto drawTextCentered = [&](TTF_Font *font, const char *text, SDL_Color color, float y) {
+        if (std::string(text).empty()) return;
         SDL_Surface *surf = TTF_RenderText_Blended(font, text, 0, color);
         SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
         SDL_FRect rect = {(800 - (float)surf->w) / 2, y, (float)surf->w, (float)surf->h};
@@ -567,8 +466,7 @@ int main(int argc, char *argv[])
         SDL_DestroyTexture(tex);
     };
 
-    auto resetGame = [&]()
-    {
+    auto resetGame = [&]() {
         p1.reset(100);
         p2.reset(650);
         ai.reset();
@@ -586,8 +484,7 @@ int main(int argc, char *argv[])
         slowActive = false;
     };
 
-    auto resetRound = [&]()
-    {
+    auto resetRound = [&]() {
         p1.reset(100);
         p2.reset(650);
         ai.reset();
@@ -601,16 +498,14 @@ int main(int argc, char *argv[])
         slowActive = false;
     };
 
-    auto triggerKOEffects = [&]()
-    {
+    auto triggerKOEffects = [&]() {
         flashTimer = flashMaxTime;
         flashRed = false;
         slowTimer = slowMaxTime;
         slowActive = true;
     };
 
-    auto triggerGrabFlash = [&]()
-    {
+    auto triggerGrabFlash = [&]() {
         flashTimer = flashMaxTime;
         flashRed = true;
     };
@@ -630,11 +525,7 @@ int main(int argc, char *argv[])
         if (slowActive)
         {
             slowTimer -= rawDeltaTime;
-            if (slowTimer <= 0)
-            {
-                slowTimer = 0;
-                slowActive = false;
-            }
+            if (slowTimer <= 0) { slowTimer = 0; slowActive = false; }
         }
 
         if (flashTimer > 0)
@@ -711,8 +602,7 @@ int main(int argc, char *argv[])
                     {
                         if (enteringP1)
                         {
-                            if (p1NameInput.empty())
-                                p1NameInput = "Player 1";
+                            if (p1NameInput.empty()) p1NameInput = "Player 1";
                             if (vsComputer)
                             {
                                 p1.name = p1NameInput;
@@ -722,13 +612,11 @@ int main(int argc, char *argv[])
                                 state = SHOW_ROUND;
                                 playTheme();
                             }
-                            else
-                                enteringP1 = false;
+                            else enteringP1 = false;
                         }
                         else
                         {
-                            if (p2NameInput.empty())
-                                p2NameInput = "Player 2";
+                            if (p2NameInput.empty()) p2NameInput = "Player 2";
                             p1.name = p1NameInput;
                             p2.name = p2NameInput;
                             SDL_StopTextInput(window);
@@ -764,61 +652,26 @@ int main(int argc, char *argv[])
 
                 if (state == PLAYING)
                 {
-                    // Jump
                     if (event.key.scancode == SDL_SCANCODE_W && !p1.taunting && !p1.charging)
                     {
-                        if (!p1.jumping)
-                        {
-                            p1.vy = jumpForce;
-                            p1.jumping = true;
-                        }
-                        else if (!p1.hasDoubleJumped)
-                        {
-                            p1.vy = jumpForce;
-                            p1.hasDoubleJumped = true;
-                        }
+                        if (!p1.jumping) { p1.vy = jumpForce; p1.jumping = true; }
+                        else if (!p1.hasDoubleJumped) { p1.vy = jumpForce; p1.hasDoubleJumped = true; }
                     }
                     if (!vsComputer && event.key.scancode == SDL_SCANCODE_UP && !p2.taunting && !p2.charging)
                     {
-                        if (!p2.jumping)
-                        {
-                            p2.vy = jumpForce;
-                            p2.jumping = true;
-                        }
-                        else if (!p2.hasDoubleJumped)
-                        {
-                            p2.vy = jumpForce;
-                            p2.hasDoubleJumped = true;
-                        }
+                        if (!p2.jumping) { p2.vy = jumpForce; p2.jumping = true; }
+                        else if (!p2.hasDoubleJumped) { p2.vy = jumpForce; p2.hasDoubleJumped = true; }
                     }
-                    // Punch
                     if (event.key.scancode == SDL_SCANCODE_F && !p1.blocking && !p1.taunting && !p1.grabbing && !p1.charging)
                     {
-                        if (!p1.jumping && !p1.attacking && !p1.kicking)
-                        {
-                            p1.attacking = true;
-                            p1.attackTimer = 15;
-                        }
-                        else if (p1.jumping && !p1.airAttacking)
-                        {
-                            p1.airAttacking = true;
-                            p1.airAttackTimer = 15;
-                        }
+                        if (!p1.jumping && !p1.attacking && !p1.kicking) { p1.attacking = true; p1.attackTimer = 15; }
+                        else if (p1.jumping && !p1.airAttacking) { p1.airAttacking = true; p1.airAttackTimer = 15; }
                     }
                     if (!vsComputer && event.key.scancode == SDL_SCANCODE_K && !p2.blocking && !p2.taunting && !p2.grabbing && !p2.charging)
                     {
-                        if (!p2.jumping && !p2.attacking && !p2.kicking)
-                        {
-                            p2.attacking = true;
-                            p2.attackTimer = 15;
-                        }
-                        else if (p2.jumping && !p2.airAttacking)
-                        {
-                            p2.airAttacking = true;
-                            p2.airAttackTimer = 15;
-                        }
+                        if (!p2.jumping && !p2.attacking && !p2.kicking) { p2.attacking = true; p2.attackTimer = 15; }
+                        else if (p2.jumping && !p2.airAttacking) { p2.airAttacking = true; p2.airAttackTimer = 15; }
                     }
-                    // Kick
                     if (event.key.scancode == SDL_SCANCODE_G && !p1.kicking && !p1.blocking && !p1.attacking && !p1.taunting && !p1.grabbing && !p1.jumping && !p1.charging)
                     {
                         p1.kicking = true;
@@ -829,7 +682,6 @@ int main(int argc, char *argv[])
                         p2.kicking = true;
                         p2.kickTimer = 20;
                     }
-                    // Grab
                     if (event.key.scancode == SDL_SCANCODE_H && !p1.grabbing && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting && !p1.jumping && !p1.charging)
                     {
                         p1.grabbing = true;
@@ -840,7 +692,6 @@ int main(int argc, char *argv[])
                         p2.grabbing = true;
                         p2.grabTimer = 10;
                     }
-                    // Release special
                     if (event.key.scancode == SDL_SCANCODE_E && p1.isFullyCharged() && !p1proj.active)
                     {
                         p1proj.fire(p1.x + 80, p1.y + 50, true, true);
@@ -856,7 +707,6 @@ int main(int argc, char *argv[])
                 }
             }
 
-            // Release charge if key released before full
             if (event.type == SDL_EVENT_KEY_UP)
             {
                 if (event.key.scancode == SDL_SCANCODE_E && !p1.isFullyCharged())
@@ -878,7 +728,6 @@ int main(int argc, char *argv[])
             p1.blocking = keys[SDL_SCANCODE_S] && !p1.taunting && !p1.jumping && !p1.charging;
             p1.taunting = keys[SDL_SCANCODE_T] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.grabbing && !p1.jumping && !p1.charging;
 
-            // Charging held
             if (keys[SDL_SCANCODE_E] && !p1.attacking && !p1.kicking && !p1.blocking && !p1.taunting && !p1.grabbing && !p1.jumping && !p1proj.active)
             {
                 p1.charging = true;
@@ -903,93 +752,56 @@ int main(int argc, char *argv[])
         if (state == SHOW_ROUND)
         {
             stateTimer -= deltaTime;
-            if (stateTimer <= 0)
-            {
-                state = SHOW_FIGHT;
-                stateTimer = 1.0f;
-            }
+            if (stateTimer <= 0) { state = SHOW_FIGHT; stateTimer = 1.0f; }
         }
         else if (state == SHOW_FIGHT)
         {
             stateTimer -= deltaTime;
-            if (stateTimer <= 0)
-                state = PLAYING;
+            if (stateTimer <= 0) state = PLAYING;
         }
-        else if (state == PAUSED)
-        {
-        }
+        else if (state == PAUSED) { }
         else if (state == PLAYING)
         {
             const bool *keys = SDL_GetKeyboardState(NULL);
 
             if (!p1.blocking && !p1.taunting && !p1.charging)
             {
-                if (keys[SDL_SCANCODE_A])
-                    p1.x -= 300 * deltaTime;
-                if (keys[SDL_SCANCODE_D])
-                    p1.x += 300 * deltaTime;
+                if (keys[SDL_SCANCODE_A]) p1.x -= 300 * deltaTime;
+                if (keys[SDL_SCANCODE_D]) p1.x += 300 * deltaTime;
             }
             if (!vsComputer && !p2.blocking && !p2.taunting && !p2.charging)
             {
-                if (keys[SDL_SCANCODE_LEFT])
-                    p2.x -= 300 * deltaTime;
-                if (keys[SDL_SCANCODE_RIGHT])
-                    p2.x += 300 * deltaTime;
+                if (keys[SDL_SCANCODE_LEFT]) p2.x -= 300 * deltaTime;
+                if (keys[SDL_SCANCODE_RIGHT]) p2.x += 300 * deltaTime;
             }
 
-            if (p1.x < 0)
-                p1.x = 0;
-            if (p1.x > 750)
-                p1.x = 750;
-            if (p2.x < 0)
-                p2.x = 0;
-            if (p2.x > 750)
-                p2.x = 750;
+            if (p1.x < 0) p1.x = 0;
+            if (p1.x > 750) p1.x = 750;
+            if (p2.x < 0) p2.x = 0;
+            if (p2.x > 750) p2.x = 750;
 
-            if (vsComputer)
-                ai.update(p2, p1, deltaTime);
+            if (vsComputer) ai.update(p2, p1, deltaTime);
 
             p1.update(deltaTime, gravity, groundY);
             p2.update(deltaTime, gravity, groundY);
             p1proj.update(deltaTime);
             p2proj.update(deltaTime);
 
-            if (p1.x < 0)
-                p1.x = 0;
-            if (p1.x > 750)
-                p1.x = 750;
-            if (p2.x < 0)
-                p2.x = 0;
-            if (p2.x > 750)
-                p2.x = 750;
+            if (p1.x < 0) p1.x = 0;
+            if (p1.x > 750) p1.x = 750;
+            if (p2.x < 0) p2.x = 0;
+            if (p2.x > 750) p2.x = 750;
 
             roundTimer -= deltaTime;
             if (roundTimer <= 0)
             {
                 roundTimer = 0;
-                if (p1.health > p2.health)
-                    p1wins++;
-                else if (p2.health > p1.health)
-                    p2wins++;
+                if (p1.health > p2.health) p1wins++;
+                else if (p2.health > p1.health) p2wins++;
 
-                if (p1wins == 2)
-                {
-                    winner = p1.name + " Wins!";
-                    state = GAME_OVER;
-                    stopTheme();
-                }
-                else if (p2wins == 2)
-                {
-                    winner = p2.name + " Wins!";
-                    state = GAME_OVER;
-                    stopTheme();
-                }
-                else
-                {
-                    currentRound++;
-                    state = ROUND_OVER;
-                    stateTimer = 2.0f;
-                }
+                if (p1wins == 2) { winner = p1.name + " Wins!"; state = GAME_OVER; stopTheme(); }
+                else if (p2wins == 2) { winner = p2.name + " Wins!"; state = GAME_OVER; stopTheme(); }
+                else { currentRound++; state = ROUND_OVER; stateTimer = 2.0f; }
             }
 
             SDL_FRect p1rect = p1.getRect();
@@ -1003,141 +815,55 @@ int main(int argc, char *argv[])
             SDL_FRect p1air = p1.getAirAttackHitbox(true);
             SDL_FRect p2air = p2.getAirAttackHitbox(false);
 
-            // Punch
             if (p1.attacking && SDL_HasRectIntersectionFloat(&p1punch, &p2rect))
             {
-                if (p2.blocking)
-                {
-                    p2.health -= 0.1f;
-                    if (p2.health < 0)
-                        p2.health = 0;
-                }
-                else
-                {
-                    p2.takeDamage(0.5f);
-                    playHit();
-                }
+                if (p2.blocking) { p2.health -= 0.1f; if (p2.health < 0) p2.health = 0; }
+                else { p2.takeDamage(0.5f); playHit(); }
             }
             if (p2.attacking && SDL_HasRectIntersectionFloat(&p2punch, &p1rect))
             {
-                if (p1.blocking)
-                {
-                    p1.health -= 0.1f;
-                    if (p1.health < 0)
-                        p1.health = 0;
-                }
-                else
-                {
-                    p1.takeDamage(0.5f);
-                    playHit();
-                }
+                if (p1.blocking) { p1.health -= 0.1f; if (p1.health < 0) p1.health = 0; }
+                else { p1.takeDamage(0.5f); playHit(); }
             }
-            // Kick
             if (p1.kicking && SDL_HasRectIntersectionFloat(&p1kick, &p2rect))
             {
-                if (p2.blocking)
-                {
-                    p2.health -= 0.15f;
-                    if (p2.health < 0)
-                        p2.health = 0;
-                }
-                else
-                {
-                    p2.takeDamage(0.7f);
-                    playHit();
-                }
+                if (p2.blocking) { p2.health -= 0.15f; if (p2.health < 0) p2.health = 0; }
+                else { p2.takeDamage(0.7f); playHit(); }
             }
             if (p2.kicking && SDL_HasRectIntersectionFloat(&p2kick, &p1rect))
             {
-                if (p1.blocking)
-                {
-                    p1.health -= 0.15f;
-                    if (p1.health < 0)
-                        p1.health = 0;
-                }
-                else
-                {
-                    p1.takeDamage(0.7f);
-                    playHit();
-                }
+                if (p1.blocking) { p1.health -= 0.15f; if (p1.health < 0) p1.health = 0; }
+                else { p1.takeDamage(0.7f); playHit(); }
             }
-            // Grab
             if (p1.grabbing && SDL_HasRectIntersectionFloat(&p1grab, &p2rect))
             {
-                if (p2.blocking)
-                {
-                    p1.grabbing = false;
-                }
-                else
-                {
-                    p2.takeDamage(0.3f);
-                    p2.getThrown(true);
-                    p1.grabbing = false;
-                    triggerGrabFlash();
-                    playHit();
-                }
+                if (p2.blocking) { p1.grabbing = false; }
+                else { p2.takeDamage(0.3f); p2.getThrown(true); p1.grabbing = false; triggerGrabFlash(); playHit(); }
             }
             if (p2.grabbing && SDL_HasRectIntersectionFloat(&p2grab, &p1rect))
             {
-                if (p1.blocking)
-                {
-                    p2.grabbing = false;
-                }
-                else
-                {
-                    p1.takeDamage(0.3f);
-                    p1.getThrown(false);
-                    p2.grabbing = false;
-                    triggerGrabFlash();
-                    playHit();
-                }
+                if (p1.blocking) { p2.grabbing = false; }
+                else { p1.takeDamage(0.3f); p1.getThrown(false); p2.grabbing = false; triggerGrabFlash(); playHit(); }
             }
-            // Air attack
             if (p1.airAttacking && SDL_HasRectIntersectionFloat(&p1air, &p2rect))
             {
-                if (p2.blocking)
-                {
-                    p2.health -= 0.1f;
-                    if (p2.health < 0)
-                        p2.health = 0;
-                }
-                else
-                {
-                    p2.takeDamage(0.5f);
-                    playHit();
-                }
+                if (p2.blocking) { p2.health -= 0.1f; if (p2.health < 0) p2.health = 0; }
+                else { p2.takeDamage(0.5f); playHit(); }
             }
             if (p2.airAttacking && SDL_HasRectIntersectionFloat(&p2air, &p1rect))
             {
-                if (p1.blocking)
-                {
-                    p1.health -= 0.1f;
-                    if (p1.health < 0)
-                        p1.health = 0;
-                }
-                else
-                {
-                    p1.takeDamage(0.5f);
-                    playHit();
-                }
+                if (p1.blocking) { p1.health -= 0.1f; if (p1.health < 0) p1.health = 0; }
+                else { p1.takeDamage(0.5f); playHit(); }
             }
+
             // Projectile hits
             if (p1proj.active)
             {
                 SDL_FRect projRect = p1proj.getRect();
                 if (SDL_HasRectIntersectionFloat(&projRect, &p2rect))
                 {
-                    if (p2.blocking)
-                    {
-                        p2.health -= 0.3f;
-                        if (p2.health < 0)
-                            p2.health = 0;
-                    }
-                    else
-                    {
-                        p2.takeDamage(2.5f);
-                        playHit();
-                    }
+                    if (p2.blocking) { p2.health -= 0.3f; if (p2.health < 0) p2.health = 0; }
+                    else { p2.takeDamage(2.5f); playHit(); }
                     p1proj.active = false;
                 }
             }
@@ -1146,18 +872,23 @@ int main(int argc, char *argv[])
                 SDL_FRect projRect = p2proj.getRect();
                 if (SDL_HasRectIntersectionFloat(&projRect, &p1rect))
                 {
-                    if (p1.blocking)
-                    {
-                        p1.health -= 0.3f;
-                        if (p1.health < 0)
-                            p1.health = 0;
-                    }
-                    else
-                    {
-                        p1.takeDamage(2.5f);
-                        playHit();
-                    }
+                    if (p1.blocking) { p1.health -= 0.3f; if (p1.health < 0) p1.health = 0; }
+                    else { p1.takeDamage(2.5f); playHit(); }
                     p2proj.active = false;
+                }
+            }
+
+            // Projectiles cancel each other
+            if (p1proj.active && p2proj.active)
+            {
+                SDL_FRect r1 = p1proj.getRect();
+                SDL_FRect r2 = p2proj.getRect();
+                if (SDL_HasRectIntersectionFloat(&r1, &r2))
+                {
+                    p1proj.active = false;
+                    p2proj.active = false;
+                    flashTimer = flashMaxTime;
+                    flashRed = false;
                 }
             }
 
@@ -1166,40 +897,19 @@ int main(int argc, char *argv[])
                 if (!slowActive)
                 {
                     triggerKOEffects();
-                    if (p1.health <= 0)
-                        p2wins++;
-                    if (p2.health <= 0)
-                        p1wins++;
+                    if (p1.health <= 0) p2wins++;
+                    if (p2.health <= 0) p1wins++;
 
-                    if (p1wins == 2)
-                    {
-                        winner = p1.name + " Wins!";
-                        state = GAME_OVER;
-                        stopTheme();
-                    }
-                    else if (p2wins == 2)
-                    {
-                        winner = p2.name + " Wins!";
-                        state = GAME_OVER;
-                        stopTheme();
-                    }
-                    else
-                    {
-                        currentRound++;
-                        state = ROUND_OVER;
-                        stateTimer = 2.0f;
-                    }
+                    if (p1wins == 2) { winner = p1.name + " Wins!"; state = GAME_OVER; stopTheme(); }
+                    else if (p2wins == 2) { winner = p2.name + " Wins!"; state = GAME_OVER; stopTheme(); }
+                    else { currentRound++; state = ROUND_OVER; stateTimer = 2.0f; }
                 }
             }
         }
         else if (state == ROUND_OVER)
         {
             stateTimer -= deltaTime;
-            if (stateTimer <= 0)
-            {
-                resetRound();
-                state = SHOW_ROUND;
-            }
+            if (stateTimer <= 0) { resetRound(); state = SHOW_ROUND; }
         }
 
         // DRAW
@@ -1316,17 +1026,21 @@ int main(int argc, char *argv[])
                 SDL_RenderFillRect(renderer, &dot);
             }
 
+            // Timer
             int timerSeconds = (int)roundTimer;
             SDL_Color timerColor = timerSeconds <= 10 ? red : white;
             drawTextCentered(fontTimer, std::to_string(timerSeconds).c_str(), timerColor, 40);
 
-            // Draw projectiles
+            // Round counter
+            std::string roundText = "Round " + std::to_string(currentRound) + "/3";
+            drawTextCentered(fontSmall, roundText.c_str(), gray, 75);
+
+            // Projectiles
             if (p1proj.active)
             {
                 SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
                 SDL_FRect projRect = p1proj.getRect();
                 SDL_RenderFillRect(renderer, &projRect);
-                // Glow effect
                 SDL_SetRenderDrawColor(renderer, 255, 200, 0, 100);
                 SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
                 SDL_FRect glowRect = {projRect.x - 5, projRect.y - 5, projRect.w + 10, projRect.h + 10};
@@ -1363,8 +1077,8 @@ int main(int argc, char *argv[])
 
             if (state == SHOW_ROUND)
             {
-                std::string roundText = "Round " + std::to_string(currentRound);
-                drawTextCentered(fontBig, roundText.c_str(), white, (600 - 80) / 2);
+                std::string rt = "Round " + std::to_string(currentRound);
+                drawTextCentered(fontBig, rt.c_str(), white, (600 - 80) / 2);
             }
             else if (state == SHOW_FIGHT)
             {
